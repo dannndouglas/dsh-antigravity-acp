@@ -11,7 +11,7 @@ export function classify(error: unknown): LlmError {
       /auth|log.?in|sign.?in/i.test(error.message + JSON.stringify(error.data ?? {}))
     )
       return new LlmError(
-        'Antigravity requires authentication. Run dsh-antigravity-acp login, then retry.',
+        'Antigravity requires Google authorization. Send a message in DSH to open the official browser login.',
         'ACP_AUTH_REQUIRED',
       );
     if (error.code === -32602)

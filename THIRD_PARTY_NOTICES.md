@@ -5,6 +5,10 @@ and DeepSeek Harness packages; their licenses remain with their distributions.
 No Google executable, credential file, or third-party implementation is copied
 into this repository or package.
 
+ZIP extraction uses [yauzl](https://github.com/thejoshwolfe/yauzl) (MIT), imported
+as a package dependency. Official Google archives are downloaded directly to a
+local cache at runtime; they are not redistributed by this repository.
+
 Architectural references:
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), MIT:

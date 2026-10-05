@@ -2,6 +2,8 @@ import z from '@deepseek-ai/schemastery';
 export interface Config {
     provider: string;
     command: string;
+    autoInstall: boolean;
+    installTimeoutMs: number;
     args: string[];
     auth: 'oauth-personal';
     defaultModel: string;

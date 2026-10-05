@@ -1,3 +1,10 @@
 - insert:
     - id: llm-antigravity-acp
       name: dsh-antigravity-acp
+
+# Fresh chats use this provider immediately; saved profile/session selections
+# remain higher-priority choices in DSH's normal configuration composition.
+- id: agent-default-model
+  config:
+    provider: antigravity-acp
+    model: server-default

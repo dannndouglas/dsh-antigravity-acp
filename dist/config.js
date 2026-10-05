@@ -2,6 +2,8 @@ import z from '@deepseek-ai/schemastery';
 export const Config = z.object({
     provider: z.string().default('antigravity-acp'),
     command: z.string().default(''),
+    autoInstall: z.boolean().default(true),
+    installTimeoutMs: z.natural().default(180000),
     args: z.array(z.string()).default([]),
     auth: z.const('oauth-personal').default('oauth-personal'),
     defaultModel: z.string().default(''),
@@ -19,6 +21,7 @@ export function resolveConfig(input = {}) {
     if (!config.provider.trim())
         throw new Error('provider must not be empty');
     for (const key of [
+        'installTimeoutMs',
         'timeoutMs',
         'requestTimeoutMs',
         'authTimeoutMs',

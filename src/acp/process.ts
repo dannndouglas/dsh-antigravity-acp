@@ -3,10 +3,12 @@ import { basename, join } from 'node:path';
 import { LlmError } from '@deepseek-ai/dsh-llm';
 import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess';
 import type { Config } from '../config.js';
+import { ensureOfficialServer } from './installer.js';
 export async function resolveCommand(
   config: Config,
   runtime: SubprocessRuntime,
   signal?: AbortSignal,
+  notify?: (message: string) => void,
 ): Promise<string> {
   const explicit = config.command || process.env.AGY_ACP_BIN;
   const names =
@@ -28,8 +30,17 @@ export async function resolveCommand(
       signal?.throwIfAborted();
     }
   }
+  // An explicit override is authoritative: never hide a typo by downloading.
+  if (!explicit && config.autoInstall) {
+    const command = await ensureOfficialServer({
+      signal,
+      timeoutMs: config.installTimeoutMs,
+      notify,
+    });
+    return runtime.resolveExecutable(command, undefined, signal);
+  }
   throw new LlmError(
-    'Official Antigravity ACP binary was not found. Set command or AGY_ACP_BIN to the official executable; see the ACP Registry installation instructions.',
+    'Official Antigravity ACP binary was not found. Remove an invalid command override or enable automatic installation, then retry in DSH.',
     'ACP_BINARY_MISSING',
   );
 }

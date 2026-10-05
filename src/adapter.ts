@@ -28,7 +28,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
     private warn: (message: string) => void = () => {},
   ) {
     super();
-    this.client = new AcpClient(config, runtime);
+    this.client = new AcpClient(config, runtime, warn);
   }
   providerInfo(provider: string) {
     return { id: provider, name: 'Antigravity (official ACP · text only)' };

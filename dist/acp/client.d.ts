@@ -5,6 +5,7 @@ import type { Config } from '../config.js';
 export declare class AcpClient {
     readonly config: Config;
     readonly runtime: SubprocessRuntime;
+    private notify;
     private connection?;
     private child?;
     private cwd?;
@@ -16,7 +17,7 @@ export declare class AcpClient {
     authentications: number;
     onUpdate?: (event: SessionNotification) => void;
     onPermission?: () => void;
-    constructor(config: Config, runtime: SubprocessRuntime);
+    constructor(config: Config, runtime: SubprocessRuntime, notify?: (message: string) => void);
     get connected(): boolean;
     private bounded;
     start(signal?: AbortSignal): Promise<void>;

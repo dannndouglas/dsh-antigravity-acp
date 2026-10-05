@@ -4,32 +4,35 @@ O plugin registra `antigravity-acp` no seletor normal de modelos do DSH e usa
 o **servidor ACP oficial do Google** via stdio. O próprio servidor executa
 `oauth-personal`. O plugin não lê tokens, não implementa OAuth e não usa API key.
 
-**A versão 0.1 suporta conversa em texto e reasoning quando fornecido pelo
+**A versão 0.2 suporta conversa em texto e reasoning quando fornecido pelo
 servidor. Não executa ferramentas do DSH.** ACP expõe um agente completo;
 atividades de ferramentas nativas geram erro explícito e encerramento do processo.
 
 ## Instalação
 
-Use Node.js >=22.19 e DSH 0.2.1-alpha.1. Baixe e extraia a distribuição completa
-do servidor indicada no [ACP Registry](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json).
-O binário Google não está incluído no plugin.
+Use Node.js >=22.19 e DSH 0.2.1-alpha.1. Adicione o plugin ao DSH:
 
 ```powershell
-$env:AGY_ACP_BIN = 'C:\Tools\antigravity-acp\agy_acp_server.exe'
 dsh plugin --profile web add git+https://github.com/dannndouglas/dsh-antigravity-acp.git
 ```
 
-Reinicie o perfil. Para o login a partir de um checkout:
+Abra o perfil e converse. Se o DSH já estiver aberto, use seu recarregamento
+normal. **Não precisa baixar binários, definir variáveis, editar arquivos ou
+executar login pelo terminal.** Antigravity é o padrão dos chats novos, exceto
+quando já existe uma escolha explícita salva no perfil ou na sessão.
 
-```sh
-npm ci
-npm run auth
-npm run probe
-```
+No primeiro uso, o plugin baixa a distribuição completa oficial do Google,
+diretamente de `dl.google.com`, conforme o [ACP Registry](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json).
+O download pode levar alguns minutos e é reutilizado nas próximas aberturas.
+Há suporte automático para Windows, macOS e Linux, x64 e arm64.
 
-O login é solicitado ao servidor oficial. Conclua o fluxo no navegador se ele
-abrir. No DSH, escolha **Antigravity (official ACP · text only)** e um dos
-modelos anunciados. O catálogo é descoberto por ACP; os nomes não são fixos.
+Se a conta ainda não estiver autorizada, o servidor oficial abre o navegador
+ao enviar a primeira mensagem. Autorize sua conta Google e a conversa continua
+automaticamente. Essa autorização da conta exige sua interação; nenhuma
+configuração técnica é necessária. O plugin não lê nem armazena credenciais.
+
+O modelo padrão é o anunciado pelo servidor. Você pode trocar pelo seletor
+normal do DSH; o catálogo é descoberto por ACP e os nomes não são fixos.
 
 Configuração opcional no `cordis.patch.yml` **do perfil**:
 

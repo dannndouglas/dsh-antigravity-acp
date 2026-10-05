@@ -9,7 +9,7 @@ export function classify(error) {
     if (error instanceof RequestError) {
         if (error.code === -32000 &&
             /auth|log.?in|sign.?in/i.test(error.message + JSON.stringify(error.data ?? {})))
-            return new LlmError('Antigravity requires authentication. Run dsh-antigravity-acp login, then retry.', 'ACP_AUTH_REQUIRED');
+            return new LlmError('Antigravity requires Google authorization. Send a message in DSH to open the official browser login.', 'ACP_AUTH_REQUIRED');
         if (error.code === -32602)
             return new LlmError('The official ACP server rejected the request parameters or model.', 'ACP_INVALID_PARAMS');
         if (error.code === -32601)

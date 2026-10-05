@@ -137,3 +137,28 @@ the machine's global DSH installation. The composed profile (`--dump-config`)
 contained the `llm-antigravity-acp` row and its package was automatically added
 to `dsh.profile.bundles`. A broken pre-existing pnpm shim on the machine was
 bypassed with a local pnpm executable used only for this verification.
+
+## Version 0.2: zero-configuration verification
+
+On 2026-10-05 the real smoke was repeated with **no `AGY_ACP_BIN` or configured
+command** and a fresh installer cache. The plugin fetched Google's Windows x64
+1.3.0 ZIP directly, extracted both official executables, published its ready
+receipt and produced all six successful smoke lines shown above. The files were
+81,437,336 and 145,548,952 bytes; neither is included in the plugin package.
+
+The v0.2.0 tarball was then installed through DSH's normal plugin manager into
+an isolated `headless` profile. Its user `cordis.patch.yml` remained exactly `[]`.
+No provider, model, binary path or API key was configured. The ordinary command
+`dsh --profile headless "Reply exactly with ACP_OK. Do not use tools."` returned:
+
+```text
+ACP_OK
+```
+
+Exit status was zero. This exercised the actual installed DSH application,
+the package's default-model bundle patch, cached automatic server provisioning
+and a real Google response. The browser account was already authorized by the
+earlier official login; this record does **not** claim a fresh browser-consent
+test. The zero-config fake-server integration separately verifies that first
+generation invokes `oauth-personal` and continues after authentication, without
+a CLI login command. No manual visual interaction with the DSH UI is claimed.

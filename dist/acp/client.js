@@ -11,6 +11,7 @@ import { modelOption, selectValues } from '../models.js';
 export class AcpClient {
     config;
     runtime;
+    notify;
     connection;
     child;
     cwd;
@@ -22,9 +23,10 @@ export class AcpClient {
     authentications = 0;
     onUpdate;
     onPermission;
-    constructor(config, runtime) {
+    constructor(config, runtime, notify = () => { }) {
         this.config = config;
         this.runtime = runtime;
+        this.notify = notify;
     }
     get connected() {
         return !!this.connection && !this.connection.signal.aborted;
@@ -63,7 +65,7 @@ export class AcpClient {
         if (this.child)
             await this.reset();
         try {
-            const command = await resolveCommand(this.config, this.runtime, signal);
+            const command = await resolveCommand(this.config, this.runtime, signal, this.notify);
             const cwd = this.cwd ?? (await mkdtemp(join(tmpdir(), 'dsh-antigravity-acp-')));
             if (this.disposed || signal?.aborted) {
                 if (!this.cwd)
@@ -89,7 +91,7 @@ export class AcpClient {
             void child.done.then(() => connection.close(), () => connection.close());
             const init = await this.bounded(connection.agent.request(methods.agent.initialize, {
                 protocolVersion: 1,
-                clientInfo: { name: 'dsh-antigravity-acp', version: '0.1.0' },
+                clientInfo: { name: 'dsh-antigravity-acp', version: '0.2.0' },
                 clientCapabilities: {
                     fs: { readTextFile: false, writeTextFile: false },
                     terminal: false,
@@ -109,6 +111,7 @@ export class AcpClient {
         const method = this.initializeResult?.authMethods?.find((m) => m.id === this.config.auth);
         if (!method || ('type' in method && method.type === 'terminal'))
             throw new LlmError('This server does not advertise protocol-driven oauth-personal authentication.', 'ACP_AUTH_UNSUPPORTED');
+        this.notify('Authorize your Google account in the browser opened by the official Antigravity server. DSH will continue automatically.');
         await this.bounded(this.connection.agent.request(methods.agent.authenticate, { methodId: method.id }), this.config.authTimeoutMs, signal);
         this.authentications++;
     }

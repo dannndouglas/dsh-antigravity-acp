@@ -7,6 +7,31 @@ It registers `AntigravityAcpAdapter` using `ctx.llm.registerAdapter` and dispose
 it through `ctx.effect`. This is a primary LLM route, not a `subagents` provider.
 `providerInfo`, `listModels` and `resolveModel` implement DSH's current picker seams.
 
+The bundle also sets the ordinary `agent-default-model` row to
+`antigravity-acp/server-default`. Existing explicit profile/session selections
+retain their normal precedence. A message can therefore use the provider without
+opening the model picker or configuring a server path.
+
+## Automatic provisioning
+
+Executable lookup preserves explicit overrides and existing installations.
+Otherwise `installer.ts` selects a pinned Google 1.3.0 ZIP for the current
+OS/CPU and streams it into a private staging directory in the DSH cache.
+It validates ZIP paths/types/sizes, preserves all sibling runtime files and
+sets executable permission on POSIX. The full payload and completion manifest
+are published by directory rename under a short cross-process publication lock.
+Aborts/failures remove staging data; corrupt caches are replaced automatically.
+Ready manifests check each cached file's type and length before reuse.
+Manifests are completeness receipts, not vendor signatures or cryptographic
+integrity guarantees against a local attacker controlling the same account.
+Network downloads use normal TLS and reject redirects to other origins.
+
+No package lifecycle script downloads or executes a server, and no Google
+binary is redistributed. Provisioning runs on first model lookup/message.
+When a first message encounters `auth_required`, ACP `authenticate` invokes
+the official server's browser flow and session creation continues automatically.
+Background catalog discovery never requests interactive authentication.
+
 ```mermaid
 sequenceDiagram
   participant DSH as DSH context and UI
@@ -105,7 +130,7 @@ the single terminal finish; nothing is emitted after it.
 `usage_update.used/size` is session context occupancy. It cannot supply DSH's
 disjoint input/output/cache billing vocabulary. It is ignored rather than
 converted to invented usage. The optional SDK `PromptResponse.usage` extension
-is unstable and also not consumed in v0.1. Actual reasoning text is supported,
+is unstable and also not consumed in v0.2. Actual reasoning text is supported,
 but selectable effort is encoded only in exact server model IDs.
 
 Transport/protocol failures throw sanitized `LlmError` codes. In-band stop
