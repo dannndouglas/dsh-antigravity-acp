@@ -1,0 +1,47 @@
+{
+  "name": "dsh-antigravity-acp",
+  "version": "0.1.0",
+  "description": "Official Google Antigravity ACP text provider for DeepSeek Harness",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "bin": { "dsh-antigravity-acp": "dist/cli.js" },
+  "files": ["dist", "cordis.patch.yml", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "docs"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "repository": { "type": "git", "url": "git+https://github.com/dannndouglas/dsh-antigravity-acp.git" },
+  "keywords": ["dsh-plugin", "deepseek-harness", "antigravity", "acp"],
+  "engines": { "node": ">=22.19" },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "format:check": "prettier --check src tests scripts",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run build && node scripts/check-package.mjs",
+    "auth": "npm run build && node dist/cli.js login",
+    "probe": "npm run build && node dist/cli.js probe",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.4.0",
+    "@deepseek-ai/schemastery": "3.18.5-alpha.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.5-alpha.1",
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-subprocess-local": "0.2.1-alpha.1"
+  },
+  "peerDependenciesMeta": { "@deepseek-ai/dsh-subprocess-local": { "optional": true } },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5-alpha.1",
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-subprocess-local": "0.2.1-alpha.1",
+    "@types/node": "^22.15.0",
+    "typescript": "^5.9.3",
+    "prettier": "3.6.2",
+    "vitest": "^4.1.11"
+  }
+}
