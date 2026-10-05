@@ -129,7 +129,7 @@ export class DshMcpBridge {
     }
     const body: unknown = JSON.parse(Buffer.concat(parts).toString('utf8'));
     const protocol = new Server(
-      { name: 'dsh-bridge', version: '0.3.1' },
+      { name: 'dsh-bridge', version: '0.3.2' },
       { capabilities: { tools: {} } },
     );
     this.protocols.add(protocol);

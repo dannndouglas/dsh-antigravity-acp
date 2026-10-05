@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Context } from '@deepseek-ai/cordis';
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local';
 import {
@@ -21,6 +21,7 @@ afterEach(async () => {
 function fixture(variant = 'bridge', extra = {}) {
   const ctx = new Context();
   contexts.push(ctx);
+  const runtime = new LocalSubprocessRuntime(ctx);
   const adapter = new AntigravityAcpAdapter(
     resolveConfig({
       command: process.execPath,
@@ -30,7 +31,7 @@ function fixture(variant = 'bridge', extra = {}) {
       disposeGraceMs: 100,
       ...extra,
     }),
-    new LocalSubprocessRuntime(ctx),
+    runtime,
   );
   live.push(adapter);
   const options: GenerateOptions = {
@@ -51,7 +52,7 @@ function fixture(variant = 'bridge', extra = {}) {
       },
     ],
   };
-  return { adapter, options };
+  return { adapter, options, runtime };
 }
 async function collect(a: AntigravityAcpAdapter, o: GenerateOptions) {
   const cs: StreamChunk[] = [];
@@ -86,6 +87,114 @@ function answer(o: GenerateOptions, cs: StreamChunk[], isError = false): Generat
   };
 }
 describe('DSH tool round trips over ACP + MCP', () => {
+  it('uses the model-discovery process for the first tool turn instead of starting another server', async () => {
+    const { adapter, options, runtime } = fixture();
+    const spawn = vi.spyOn(runtime, 'spawn');
+    await adapter.listModels('antigravity-acp');
+    const first = await collect(adapter, options);
+    await collect(adapter, answer(options, first));
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(adapter.diagnostics().processStarts).toBe(1);
+  });
+  it('reuses a ready process across completed turns with fresh ACP sessions and current tools', async () => {
+    const { adapter, options, runtime } = fixture();
+    const spawn = vi.spyOn(runtime, 'spawn');
+    const first = await collect(adapter, options);
+    const firstDone = await collect(adapter, answer(options, first));
+    expect(firstDone.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } });
+    expect(adapter.diagnostics().activeToolSessions).toBe(0);
+    const secondOptions = {
+      ...options,
+      sessionId: SessionId('independent-turn'),
+      tools: [{ ...options.tools![0]!, name: 'updated_read' }],
+    };
+    const second = await collect(adapter, secondOptions);
+    expect(calls(second)[0]!.name).toBe('updated_read');
+    const secondDone = await collect(adapter, answer(secondOptions, second));
+    expect(secondDone.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } });
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(adapter.diagnostics().processStarts).toBe(1);
+    expect(adapter.diagnostics().idleToolProcesses).toBe(1);
+    const child = spawn.mock.results[0]!.value;
+    await adapter.dispose();
+    await child.done;
+    expect(adapter.diagnostics().idleToolProcesses).toBe(0);
+  });
+  it('expires idle processes and starts a clean process on the next turn', async () => {
+    const { adapter, options, runtime } = fixture('bridge', { idleProcessTimeoutMs: 50 });
+    const spawn = vi.spyOn(runtime, 'spawn');
+    const first = await collect(adapter, options);
+    await collect(adapter, answer(options, first));
+    await spawn.mock.results[0]!.value.done;
+    expect(adapter.diagnostics().idleToolProcesses).toBe(0);
+    const second = await collect(adapter, options);
+    await collect(adapter, answer(options, second));
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+  it('replaces a ready process that died before its next turn', async () => {
+    const { adapter, options, runtime } = fixture();
+    const spawn = vi.spyOn(runtime, 'spawn');
+    const first = await collect(adapter, options);
+    await collect(adapter, answer(options, first));
+    const child = spawn.mock.results[0]!.value;
+    child.terminate();
+    await child.done;
+    const second = await collect(adapter, options);
+    await collect(adapter, answer(options, second));
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(adapter.diagnostics().processStarts).toBe(2);
+  });
+  it('keeps at most two idle processes after concurrent completed turns', async () => {
+    const { adapter, options, runtime } = fixture();
+    const spawn = vi.spyOn(runtime, 'spawn');
+    const requests = ['one', 'two', 'three'].map((id) => ({
+      ...options,
+      sessionId: SessionId(id),
+    }));
+    const first = await Promise.all(requests.map((request) => collect(adapter, request)));
+    await Promise.all(requests.map((request, i) => collect(adapter, answer(request, first[i]!))));
+    expect(spawn).toHaveBeenCalledTimes(3);
+    expect(adapter.diagnostics().activeToolSessions).toBe(0);
+    expect(adapter.diagnostics().idleToolProcesses).toBe(2);
+    await adapter.dispose();
+    await Promise.all(spawn.mock.results.map((result) => result.value.done));
+    expect(adapter.diagnostics().connected).toBe(false);
+  });
+  it('discards a reused process when its next turn is cancelled', async () => {
+    const { adapter, options, runtime } = fixture();
+    const spawn = vi.spyOn(runtime, 'spawn');
+    const first = await collect(adapter, options);
+    await collect(adapter, answer(options, first));
+    const controller = new AbortController();
+    await collect(adapter, { ...options, signal: controller.signal });
+    controller.abort();
+    await spawn.mock.results[0]!.value.done;
+    const recovered = await collect(adapter, options);
+    await collect(adapter, answer(options, recovered));
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(adapter.diagnostics().processStarts).toBe(2);
+  });
+  it('recycles a warm process at the configured ACP session limit', async () => {
+    const { adapter, options, runtime } = fixture('bridge', { maxSessionsPerProcess: 1 });
+    const spawn = vi.spyOn(runtime, 'spawn');
+    const first = await collect(adapter, options);
+    await collect(adapter, answer(options, first));
+    const second = await collect(adapter, options);
+    await collect(adapter, answer(options, second));
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(adapter.diagnostics().processStarts).toBe(2);
+  });
+  it('preserves the active-session limit when requests arrive concurrently', async () => {
+    const { adapter, options } = fixture('bridge', { maxActiveToolSessions: 1 });
+    const [first, second] = await Promise.allSettled([
+      collect(adapter, options),
+      collect(adapter, { ...options, sessionId: SessionId('concurrent') }),
+    ]);
+    expect(first.status).toBe('fulfilled');
+    expect(second.status).toBe('rejected');
+    if (second.status === 'rejected')
+      expect(second.reason).toMatchObject({ code: 'ACP_SESSION_LIMIT' });
+  });
   it('emits real DSH tool chunks and resumes the same pending ACP prompt with its result', async () => {
     const { adapter, options } = fixture();
     const first = await collect(adapter, options);

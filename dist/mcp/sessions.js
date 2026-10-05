@@ -26,8 +26,8 @@ const unavailable = () => ({
         { type: 'text', text: 'The DSH tool round trip was cancelled. No result is available.' },
     ],
 });
-/** A separate managed ACP process for each in-flight tool turn avoids subagent deadlocks.
- * The only retained state is an unfinished MCP exchange. DSH history starts every new turn.
+/** Active turns own separate ACP processes, avoiding subagent deadlocks.
+ * Completed processes can stay ready; every independent turn gets a fresh ACP session.
  */
 export class ToolSessions {
     config;
@@ -35,6 +35,8 @@ export class ToolSessions {
     notify;
     bindings = new Map();
     closing = new Set();
+    idleClients = new Map();
+    counts = new WeakMap();
     disposed = false;
     processStarts = 0;
     authentications = 0;
@@ -46,6 +48,55 @@ export class ToolSessions {
     }
     get active() {
         return this.bindings.size;
+    }
+    get idle() {
+        return this.idleClients.size;
+    }
+    get connected() {
+        return [...this.idleClients.keys(), ...[...this.bindings.values()].map((b) => b.client)].some((client) => client.connected);
+    }
+    account(client) {
+        const previous = this.counts.get(client) ?? { starts: 0, auth: 0 };
+        this.processStarts += client.processStarts - previous.starts;
+        this.authentications += client.authentications - previous.auth;
+        this.counts.set(client, { starts: client.processStarts, auth: client.authentications });
+    }
+    track(cleanup) {
+        this.closing.add(cleanup);
+        void cleanup.then(() => this.closing.delete(cleanup), () => this.closing.delete(cleanup));
+        return cleanup;
+    }
+    takeClient() {
+        for (const [client, timer] of this.idleClients) {
+            this.idleClients.delete(client);
+            clearTimeout(timer);
+            if (client.connected)
+                return client;
+            void this.track(client.dispose()).catch(() => { });
+        }
+        return new AcpClient(this.config, this.runtime, this.notify);
+    }
+    async keepClient(client) {
+        client.onUpdate = undefined;
+        client.onPermission = undefined;
+        if (this.disposed || !client.connected || this.idleClients.size >= 2) {
+            await client.dispose();
+            return;
+        }
+        const timer = setTimeout(() => {
+            this.idleClients.delete(client);
+            void this.track(client.dispose()).catch(() => { });
+        }, this.config.idleProcessTimeoutMs);
+        timer.unref();
+        this.idleClients.set(client, timer);
+    }
+    async acceptReadyClient(client) {
+        try {
+            await this.keepClient(client);
+        }
+        finally {
+            this.account(client);
+        }
     }
     find(o) {
         if (o.purpose)
@@ -109,7 +160,11 @@ export class ToolSessions {
         if (this.bindings.size >= this.config.maxActiveToolSessions)
             throw new LlmError('Too many active ACP tool sessions. Finish or cancel an existing turn.', 'ACP_SESSION_LIMIT');
         const key = o.sessionId && !o.purpose ? o.sessionId : randomUUID();
-        const client = new AcpClient(this.config, this.runtime, this.notify);
+        const client = this.takeClient();
+        if (this.disposed || o.signal?.aborted) {
+            await client.dispose();
+            throw aborted();
+        }
         const b = {
             key,
             client,
@@ -215,7 +270,7 @@ export class ToolSessions {
             throw new LlmError('ACP adapter disposed.', 'ACP_DISPOSED');
         if (o.signal?.aborted)
             throw aborted();
-        let b = this.find(o), fresh = !b, parked = false;
+        let b = this.find(o), fresh = !b, parked = false, completed = false;
         if (b && (!b.sessionId || b.writer))
             throw new LlmError('This DSH session already has an active generation.', 'ACP_SESSION_BUSY');
         let prompt;
@@ -295,6 +350,7 @@ export class ToolSessions {
             if (!w.mapper.hasText && b.stop === 'end_turn')
                 throw new LlmError('Official ACP server ended without assistant text.', 'EMPTY_RESPONSE');
             yield* w.mapper.end();
+            completed = b.stop === 'end_turn';
             yield { type: 'finish', reason: finishReason(b.stop) };
         }
         catch (error) {
@@ -305,10 +361,10 @@ export class ToolSessions {
             if (b.writer === w)
                 b.writer = undefined;
             if (!parked)
-                await this.close(b);
+                await this.close(b, completed && !o.signal?.aborted && !b.error);
         }
     }
-    async close(b) {
+    async close(b, reusable = false) {
         if (b.cleanup)
             return b.cleanup;
         if (this.bindings.get(b.key) === b)
@@ -320,25 +376,45 @@ export class ToolSessions {
         b.writer?.wake?.();
         const cleanup = (async () => {
             try {
-                await b.client.cancelAndReset(b.sessionId);
+                if (!reusable)
+                    await b.client.cancelAndReset(b.sessionId);
             }
             finally {
                 for (const pending of b.pending.values())
                     pending.resolve(unavailable());
                 b.pending.clear();
-                await b.bridge.close();
-                await b.client.dispose();
-                this.processStarts += b.client.processStarts;
-                this.authentications += b.client.authentications;
+                let bridgeClosed = false;
+                try {
+                    await b.bridge.close();
+                    bridgeClosed = true;
+                }
+                finally {
+                    try {
+                        if (reusable && bridgeClosed)
+                            await this.keepClient(b.client);
+                        else
+                            await b.client.dispose();
+                    }
+                    finally {
+                        this.account(b.client);
+                    }
+                }
             }
         })();
         b.cleanup = cleanup;
-        this.closing.add(cleanup);
-        void cleanup.then(() => this.closing.delete(cleanup), () => this.closing.delete(cleanup));
-        return cleanup;
+        return this.track(cleanup);
     }
     async dispose() {
         this.disposed = true;
-        await Promise.all([...this.closing, ...[...this.bindings.values()].map((b) => this.close(b))]);
+        const idle = [...this.idleClients].map(([client, timer]) => {
+            clearTimeout(timer);
+            return client.dispose();
+        });
+        this.idleClients.clear();
+        await Promise.all([
+            ...idle,
+            ...this.closing,
+            ...[...this.bindings.values()].map((b) => this.close(b)),
+        ]);
     }
 }

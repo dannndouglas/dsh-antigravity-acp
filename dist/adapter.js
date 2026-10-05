@@ -7,8 +7,9 @@ import { buildPrompt } from './prompt.js';
 import { ToolSessions } from './mcp/sessions.js';
 export class AntigravityAcpAdapter extends LlmAdapter {
     config;
+    runtime;
     warn;
-    client;
+    controlClient;
     tools;
     tail = Promise.resolve();
     disposed = false;
@@ -19,9 +20,13 @@ export class AntigravityAcpAdapter extends LlmAdapter {
     constructor(config, runtime, warn = () => { }) {
         super();
         this.config = config;
+        this.runtime = runtime;
         this.warn = warn;
-        this.client = new AcpClient(config, runtime, warn);
+        this.controlClient = new AcpClient(config, runtime, warn);
         this.tools = new ToolSessions(config, runtime, warn);
+    }
+    get client() {
+        return this.controlClient;
     }
     providerInfo(provider) {
         return { id: provider, name: 'Antigravity (official ACP)' };
@@ -64,6 +69,13 @@ export class AntigravityAcpAdapter extends LlmAdapter {
             if (!this.catalog.length) {
                 try {
                     this.catalog = modelCatalog(await this.client.newSession(this.lifetime.signal, false));
+                    if (this.config.toolPolicy === 'bridge' &&
+                        this.catalog.length &&
+                        this.client.initializeResult?.agentCapabilities?.mcpCapabilities?.http) {
+                        const ready = this.controlClient;
+                        this.controlClient = new AcpClient(this.config, this.runtime, this.warn);
+                        await this.tools.acceptReadyClient(ready);
+                    }
                 }
                 catch (error) {
                     await this.client.reset();
@@ -102,11 +114,12 @@ export class AntigravityAcpAdapter extends LlmAdapter {
     }
     diagnostics() {
         return {
-            connected: this.client.connected,
+            connected: this.client.connected || this.tools.connected,
             processStarts: this.client.processStarts + this.tools.processStarts,
             authentications: this.client.authentications + this.tools.authentications,
             generations: this.generations + this.tools.generations,
             activeToolSessions: this.tools.active,
+            idleToolProcesses: this.tools.idle,
         };
     }
     async *stream(options) {

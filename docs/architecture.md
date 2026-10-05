@@ -61,6 +61,14 @@ Title and compaction calls cannot borrow a pending tool turn. No plugin credenti
 history or session database is created.
 
 Each in-flight tool turn has its own managed ACP process and private MCP endpoint.
+After a successful turn, its MCP endpoint is closed and its handlers detached.
+Up to two healthy processes can be retained for idleProcessTimeoutMs (five minutes
+by default). A new turn checks out one exclusively, opens a fresh ACP session,
+selects the requested model and creates a new MCP endpoint from the current DSH
+tool schemas. The model-discovery process enters the same ready pool. Pooling
+does not preserve plugin conversation histories or resume completed ACP sessions.
+Idle expiry, provider disposal, cancellation and errors dispose the affected
+processes; maxSessionsPerProcess still bounds each retained process's sessions.
 This isolates conversations and allows subagent tools to call the provider while
 the parent waits for their result. A bounded active-turn limit fails explicitly
 instead of queueing recursive calls indefinitely. Requests without tools use the

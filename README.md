@@ -24,6 +24,12 @@ Tested with Google's
 server **1.3.0** on Windows x64; fake-server CI covers Windows, Linux and macOS.
 Automatic downloads support all three operating systems on x64 and arm64.
 
+In DSH's plugin manager, install using the repository URL:
+
+https://github.com/dannndouglas/dsh-antigravity-acp
+
+For a terminal installation:
+
 ```sh
 dsh plugin --profile web add git+https://github.com/dannndouglas/dsh-antigravity-acp.git
 ```
@@ -41,7 +47,7 @@ installation. Development checkout:
 npm ci
 npm run check
 npm pack
-dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.1.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.2.tgz
 ```
 
 ## How tools work
@@ -69,8 +75,17 @@ error. YOLO mode, client filesystem and client terminal capabilities stay off.
 The official executable is an agent, so these protocol guardrails **are not an
 OS sandbox** and cannot undo a native action performed before its notification.
 
-DSH remains the history authority. Independent turns start from full DSH context;
-only an unfinished tool round trip retains ACP state. Context/model/catalog
+DSH remains the history authority. Independent turns start from full DSH context.
+Version 0.3.2 reuses a ready server process and the model-discovery process.
+Each new turn still receives a fresh ACP session and its own MCP bridge.
+At most two completed processes stay ready for five minutes, then shut down.
+Cancellation, errors and early stream termination discard the affected process.
+This is automatic; no extra setup is required. Minimal real Flash Low tests
+reduced time to first text from about 21 seconds to 10–11 seconds after discovery;
+cold startup and Google's remaining setup/generation time can still take longer.
+See the [timing record](docs/performance.md).
+
+Only an unfinished tool round trip retains ACP state. Context/model/catalog
 changes discard stale exchanges. Tool turns use separate managed processes,
 allowing concurrent chats and provider calls from subagent tools. Cancellation
 remains active while DSH is running a tool or awaiting approval.
@@ -117,11 +132,12 @@ Defaults need no changes. An advanced profile patch targets the existing row:
 | timeoutMs             | 600000          | Active model segment deadline, paused during tool execution                  |
 | toolTimeoutMs         | 900000          | Deadline waiting for DSH tool results/approval                               |
 | maxActiveToolSessions | 16              | Bounded concurrent unfinished tool turns                                     |
+| idleProcessTimeoutMs  | 300000          | Keep up to two completed server processes ready between turns                 |
 | requestTimeoutMs      | 30000           | Protocol setup/config deadline                                               |
 | authTimeoutMs         | 600000          | Official browser authorization deadline                                      |
 | cancelGraceMs         | 1500            | Bound for sending ACP cancel                                                 |
 | disposeGraceMs        | 3000            | Managed process EOF grace                                                    |
-| maxSessionsPerProcess | 100             | Recycle the persistent text/discovery client between turns                   |
+| maxSessionsPerProcess | 100             | Recycle retained processes between ACP sessions                              |
 
 Discovery order: command, AGY_ACP_BIN, PATH, known user directories, automatic
 installation. Explicit overrides are authoritative; broken paths fail clearly.

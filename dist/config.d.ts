@@ -11,6 +11,7 @@ export interface Config {
     toolPolicy: 'bridge' | 'text-only' | 'reject';
     toolTimeoutMs: number;
     maxActiveToolSessions: number;
+    idleProcessTimeoutMs: number;
     timeoutMs: number;
     requestTimeoutMs: number;
     authTimeoutMs: number;

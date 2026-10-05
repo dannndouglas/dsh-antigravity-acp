@@ -69,12 +69,14 @@ const unavailable = (): CallToolResult => ({
   ],
 });
 
-/** A separate managed ACP process for each in-flight tool turn avoids subagent deadlocks.
- * The only retained state is an unfinished MCP exchange. DSH history starts every new turn.
+/** Active turns own separate ACP processes, avoiding subagent deadlocks.
+ * Completed processes can stay ready; every independent turn gets a fresh ACP session.
  */
 export class ToolSessions {
   private bindings = new Map<string, Binding>();
   private closing = new Set<Promise<void>>();
+  private idleClients = new Map<AcpClient, ReturnType<typeof setTimeout>>();
+  private counts = new WeakMap<AcpClient, { starts: number; auth: number }>();
   private disposed = false;
   processStarts = 0;
   authentications = 0;
@@ -86,6 +88,58 @@ export class ToolSessions {
   ) {}
   get active(): number {
     return this.bindings.size;
+  }
+  get idle(): number {
+    return this.idleClients.size;
+  }
+  get connected(): boolean {
+    return [...this.idleClients.keys(), ...[...this.bindings.values()].map((b) => b.client)].some(
+      (client) => client.connected,
+    );
+  }
+  private account(client: AcpClient): void {
+    const previous = this.counts.get(client) ?? { starts: 0, auth: 0 };
+    this.processStarts += client.processStarts - previous.starts;
+    this.authentications += client.authentications - previous.auth;
+    this.counts.set(client, { starts: client.processStarts, auth: client.authentications });
+  }
+  private track(cleanup: Promise<void>): Promise<void> {
+    this.closing.add(cleanup);
+    void cleanup.then(
+      () => this.closing.delete(cleanup),
+      () => this.closing.delete(cleanup),
+    );
+    return cleanup;
+  }
+  private takeClient(): AcpClient {
+    for (const [client, timer] of this.idleClients) {
+      this.idleClients.delete(client);
+      clearTimeout(timer);
+      if (client.connected) return client;
+      void this.track(client.dispose()).catch(() => {});
+    }
+    return new AcpClient(this.config, this.runtime, this.notify);
+  }
+  private async keepClient(client: AcpClient): Promise<void> {
+    client.onUpdate = undefined;
+    client.onPermission = undefined;
+    if (this.disposed || !client.connected || this.idleClients.size >= 2) {
+      await client.dispose();
+      return;
+    }
+    const timer = setTimeout(() => {
+      this.idleClients.delete(client);
+      void this.track(client.dispose()).catch(() => {});
+    }, this.config.idleProcessTimeoutMs);
+    timer.unref();
+    this.idleClients.set(client, timer);
+  }
+  async acceptReadyClient(client: AcpClient): Promise<void> {
+    try {
+      await this.keepClient(client);
+    } finally {
+      this.account(client);
+    }
   }
   private find(o: GenerateOptions): Binding | undefined {
     if (o.purpose) return undefined;
@@ -157,7 +211,11 @@ export class ToolSessions {
         'ACP_SESSION_LIMIT',
       );
     const key = o.sessionId && !o.purpose ? o.sessionId : randomUUID();
-    const client = new AcpClient(this.config, this.runtime, this.notify);
+    const client = this.takeClient();
+    if (this.disposed || o.signal?.aborted) {
+      await client.dispose();
+      throw aborted();
+    }
     const b: Binding = {
       key,
       client,
@@ -283,7 +341,8 @@ export class ToolSessions {
     if (o.signal?.aborted) throw aborted();
     let b = this.find(o),
       fresh = !b,
-      parked = false;
+      parked = false,
+      completed = false;
     if (b && (!b.sessionId || b.writer))
       throw new LlmError('This DSH session already has an active generation.', 'ACP_SESSION_BUSY');
     let prompt: string;
@@ -359,16 +418,17 @@ export class ToolSessions {
       if (!w.mapper.hasText && b.stop === 'end_turn')
         throw new LlmError('Official ACP server ended without assistant text.', 'EMPTY_RESPONSE');
       yield* w.mapper.end();
+      completed = b.stop === 'end_turn';
       yield { type: 'finish', reason: finishReason(b.stop) };
     } catch (error) {
       throw o.signal?.aborted ? aborted() : classify(error);
     } finally {
       clearTimeout(w.batch);
       if (b.writer === w) b.writer = undefined;
-      if (!parked) await this.close(b);
+      if (!parked) await this.close(b, completed && !o.signal?.aborted && !b.error);
     }
   }
-  private async close(b: Binding): Promise<void> {
+  private async close(b: Binding, reusable = false): Promise<void> {
     if (b.cleanup) return b.cleanup;
     if (this.bindings.get(b.key) === b) this.bindings.delete(b.key);
     clearTimeout(b.timer);
@@ -378,26 +438,38 @@ export class ToolSessions {
     b.writer?.wake?.();
     const cleanup = (async () => {
       try {
-        await b.client.cancelAndReset(b.sessionId);
+        if (!reusable) await b.client.cancelAndReset(b.sessionId);
       } finally {
         for (const pending of b.pending.values()) pending.resolve(unavailable());
         b.pending.clear();
-        await b.bridge.close();
-        await b.client.dispose();
-        this.processStarts += b.client.processStarts;
-        this.authentications += b.client.authentications;
+        let bridgeClosed = false;
+        try {
+          await b.bridge.close();
+          bridgeClosed = true;
+        } finally {
+          try {
+            if (reusable && bridgeClosed) await this.keepClient(b.client);
+            else await b.client.dispose();
+          } finally {
+            this.account(b.client);
+          }
+        }
       }
     })();
     b.cleanup = cleanup;
-    this.closing.add(cleanup);
-    void cleanup.then(
-      () => this.closing.delete(cleanup),
-      () => this.closing.delete(cleanup),
-    );
-    return cleanup;
+    return this.track(cleanup);
   }
   async dispose(): Promise<void> {
     this.disposed = true;
-    await Promise.all([...this.closing, ...[...this.bindings.values()].map((b) => this.close(b))]);
+    const idle = [...this.idleClients].map(([client, timer]) => {
+      clearTimeout(timer);
+      return client.dispose();
+    });
+    this.idleClients.clear();
+    await Promise.all([
+      ...idle,
+      ...this.closing,
+      ...[...this.bindings.values()].map((b) => this.close(b)),
+    ]);
   }
 }

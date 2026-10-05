@@ -16,7 +16,7 @@ import type { Config } from './config.js';
 import { ToolSessions } from './mcp/sessions.js';
 
 export class AntigravityAcpAdapter extends LlmAdapter {
-  readonly client: AcpClient;
+  private controlClient: AcpClient;
   private tools: ToolSessions;
   private tail: Promise<void> = Promise.resolve();
   private disposed = false;
@@ -26,12 +26,15 @@ export class AntigravityAcpAdapter extends LlmAdapter {
   private catalog: { id: string; name: string }[] = [];
   constructor(
     readonly config: Config,
-    runtime: SubprocessRuntime,
+    private runtime: SubprocessRuntime,
     private warn: (message: string) => void = () => {},
   ) {
     super();
-    this.client = new AcpClient(config, runtime, warn);
+    this.controlClient = new AcpClient(config, runtime, warn);
     this.tools = new ToolSessions(config, runtime, warn);
+  }
+  get client(): AcpClient {
+    return this.controlClient;
   }
   providerInfo(provider: string) {
     return { id: provider, name: 'Antigravity (official ACP)' };
@@ -69,6 +72,15 @@ export class AntigravityAcpAdapter extends LlmAdapter {
       if (!this.catalog.length) {
         try {
           this.catalog = modelCatalog(await this.client.newSession(this.lifetime.signal, false));
+          if (
+            this.config.toolPolicy === 'bridge' &&
+            this.catalog.length &&
+            this.client.initializeResult?.agentCapabilities?.mcpCapabilities?.http
+          ) {
+            const ready = this.controlClient;
+            this.controlClient = new AcpClient(this.config, this.runtime, this.warn);
+            await this.tools.acceptReadyClient(ready);
+          }
         } catch (error) {
           await this.client.reset();
           this.warn(classify(error).message);
@@ -110,11 +122,12 @@ export class AntigravityAcpAdapter extends LlmAdapter {
   }
   diagnostics() {
     return {
-      connected: this.client.connected,
+      connected: this.client.connected || this.tools.connected,
       processStarts: this.client.processStarts + this.tools.processStarts,
       authentications: this.client.authentications + this.tools.authentications,
       generations: this.generations + this.tools.generations,
       activeToolSessions: this.tools.active,
+      idleToolProcesses: this.tools.idle,
     };
   }
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {

@@ -1,6 +1,6 @@
 {
   "name": "dsh-antigravity-acp",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Official Google Antigravity ACP provider with DSH-owned tools over MCP",
   "type": "module",
   "license": "MIT",
