@@ -18,7 +18,9 @@ commands and installed extension tools use this same DSH execution path.
 
 ## Install
 
-Requires Node.js **>=22.19** and DSH **0.2.1-alpha.1**. Tested with Google's
+Requires Node.js **>=22.19**. Supports DSH **0.2.0-rc.2** and **0.2.1-alpha.1**.
+The package uses the host's matching services; no version exemption is needed.
+Tested with Google's
 server **1.3.0** on Windows x64; fake-server CI covers Windows, Linux and macOS.
 Automatic downloads support all three operating systems on x64 and arm64.
 
@@ -39,7 +41,7 @@ installation. Development checkout:
 npm ci
 npm run check
 npm pack
-dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.0.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.1.tgz
 ```
 
 ## How tools work

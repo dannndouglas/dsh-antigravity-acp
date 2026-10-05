@@ -270,3 +270,39 @@ Exit status was zero. This verifies actual command execution through the DSH
 agent loop and bridge. The default workspace-write test above separately verifies
 that a host sandbox error is preserved. The plugin neither fixes nor bypasses
 DSH's sandbox; a normal installation keeps the user's chosen permissions.
+
+## DSH 0.2.0-rc.2 installation regression — v0.3.1
+
+The v0.3.0 package incorrectly pinned its DSH peers to 0.2.1-alpha.1. The
+installed official Windows Desktop CLI reported DSH 0.2.0-rc.2 and reproduced
+the reported installation rejection, including rollback of the isolated profile.
+
+Version 0.3.1 declares both tested hosts, 0.2.0-rc.2 and 0.2.1-alpha.1, and
+builds against 0.2.0-rc.2's published libraries. The LLM adapter and subprocess
+declarations used by this plugin are unchanged between those releases. A
+regression test uses DSH's own evaluatePluginCompatibility function: it failed
+with the old manifest and passes with the corrected manifest. Untested older
+and future DSH releases remain refused by that check.
+
+All 62 tests, type checking, compilation, formatting, package checks and the
+production dependency audit passed with the 0.2.0-rc.2 libraries. CI now checks
+both supported DSH versions on Windows, Linux and macOS.
+
+The installed Desktop 0.2.0-rc.2 CLI accepted the v0.3.1 tarball through its
+ordinary plugin manager. An isolated headless profile retained an empty user
+patch; no version exemption, provider/model override or plugin configuration
+was supplied. With Google's official server 1.3.0, the normal DSH agent loop
+returned:
+
+```text
+DSH_RC2_OK
+```
+
+A second real turn read a JSON fixture using DSH's own read tool. Its tool-call
+ID began with acp_, the matching tool result completed successfully, and the
+final reply matched the fixture's proof value, which was not included in the
+prompt. Both processes exited with status zero. This validates model streaming
+and tool/result continuation in the actual installed 0.2.0-rc.2 host. The existing
+official Google authorization was reused; a fresh browser-consent flow was not
+tested in this regression check. No user profile, global DSH installation,
+permission policy or ACL was changed.

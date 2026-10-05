@@ -1,6 +1,6 @@
 {
   "name": "dsh-antigravity-acp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Official Google Antigravity ACP provider with DSH-owned tools over MCP",
   "type": "module",
   "license": "MIT",
@@ -53,16 +53,16 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.4.0",
-    "@deepseek-ai/schemastery": "3.18.5-alpha.1",
+    "@deepseek-ai/schemastery": "3.18.4",
     "@modelcontextprotocol/sdk": "1.29.0",
     "ajv": "8.20.0",
     "yauzl": "3.4.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.5-alpha.1",
-    "@deepseek-ai/dsh-llm": "0.2.1-alpha.1",
-    "@deepseek-ai/dsh-subprocess": "0.2.1-alpha.1",
-    "@deepseek-ai/dsh-subprocess-local": "0.2.1-alpha.1"
+    "@deepseek-ai/cordis": "~4.0.4 || 4.0.5-alpha.1",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2 || 0.2.1-alpha.1",
+    "@deepseek-ai/dsh-subprocess": "0.2.0-rc.2 || 0.2.1-alpha.1",
+    "@deepseek-ai/dsh-subprocess-local": "0.2.0-rc.2 || 0.2.1-alpha.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-subprocess-local": {
@@ -70,10 +70,11 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.5-alpha.1",
-    "@deepseek-ai/dsh-llm": "0.2.1-alpha.1",
-    "@deepseek-ai/dsh-subprocess": "0.2.1-alpha.1",
-    "@deepseek-ai/dsh-subprocess-local": "0.2.1-alpha.1",
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-app-boot": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-subprocess": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-subprocess-local": "0.2.0-rc.2",
     "@types/node": "^22.15.0",
     "@types/yauzl": "3.4.0",
     "prettier": "3.6.2",
