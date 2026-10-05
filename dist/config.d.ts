@@ -8,7 +8,9 @@ export interface Config {
     auth: 'oauth-personal';
     defaultModel: string;
     models: string[];
-    toolPolicy: 'text-only' | 'reject';
+    toolPolicy: 'bridge' | 'text-only' | 'reject';
+    toolTimeoutMs: number;
+    maxActiveToolSessions: number;
     timeoutMs: number;
     requestTimeoutMs: number;
     authTimeoutMs: number;

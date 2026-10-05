@@ -1,4 +1,9 @@
 import { createInterface } from 'node:readline';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+const bridges = new Map(),
+  replies = new Map();
+let prompts = 0;
 const variant = process.argv[2] ?? 'normal';
 let sessions = 0,
   authCalls = 0,
@@ -33,14 +38,21 @@ const configOptions = [
 ];
 createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line);
-  if (!m.method) return;
+  if (!m.method) {
+    replies.get(m.id)?.(m.result);
+    replies.delete(m.id);
+    return;
+  }
   const { id, method, params: p } = m;
   const ok = (result) => send({ id, result });
   if (method === 'initialize') {
     if (variant === 'init-hang') return;
     return ok({
       protocolVersion: variant === 'v2' ? 2 : 1,
-      agentCapabilities: { auth: { logout: {} } },
+      agentCapabilities: {
+        auth: { logout: {} },
+        ...(variant.startsWith('bridge') ? { mcpCapabilities: { http: true } } : {}),
+      },
       authMethods: [{ id: 'oauth-personal', name: 'Google' }],
       agentInfo: { name: 'fake-acp', version: 'test' },
     });
@@ -53,7 +65,9 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   if (method === 'session/new') {
     if (variant === 'auth' && !authCalls)
       return send({ id, error: { code: -32000, message: 'Authentication required' } });
-    return ok({ sessionId: 's' + ++sessions, configOptions });
+    const sid = 's' + ++sessions;
+    bridges.set(sid, p.mcpServers);
+    return ok({ sessionId: sid, configOptions });
   }
   if (method === 'session/set_config_option') return ok({ configOptions });
   if (method === 'session/cancel') {
@@ -65,6 +79,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     return;
   }
   if (method === 'session/prompt') {
+    prompts++;
     if (variant === 'error')
       return send({ id, error: { code: -32602, message: 'secret test credential must not leak' } });
     if (variant === 'disconnect') return process.exit(7);
@@ -78,6 +93,71 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       return;
     }
     const sid = p.sessionId;
+    if (variant === 'bridge-native') {
+      update(sid, {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'native',
+        title: 'Run native command',
+        kind: 'execute',
+        status: 'pending',
+      });
+      return;
+    }
+    if (variant.startsWith('bridge')) {
+      const descriptor = bridges.get(sid)[0];
+      const mcp = new Client({ name: 'fake-acp', version: '1' });
+      await mcp.connect(
+        new StreamableHTTPClientTransport(new URL(descriptor.url), {
+          requestInit: {
+            headers: Object.fromEntries(descriptor.headers.map((h) => [h.name, h.value])),
+          },
+        }),
+      );
+      const tools = (await mcp.listTools()).tools;
+      const call = async (path) => {
+        const acpId = 'native-' + path;
+        const toolCall = {
+          toolCallId: acpId,
+          title: 'dsh-bridge_' + tools[0].name,
+          status: 'pending',
+          kind: 'other',
+          _meta: { mcp: { server: 'dsh-bridge', tool: tools[0].name }, is_mcp_tool_call: true },
+        };
+        update(sid, { sessionUpdate: 'tool_call', ...toolCall });
+        const rid = 'permission-' + path;
+        const permission = new Promise((resolve) => replies.set(rid, resolve));
+        send({
+          id: rid,
+          method: 'session/request_permission',
+          params: {
+            sessionId: sid,
+            toolCall,
+            options: [{ optionId: 'allow', kind: 'allow_once', name: 'Allow' }],
+          },
+        });
+        if ((await permission).outcome.outcome !== 'selected')
+          throw Error('Bridge permission denied');
+        const result = await mcp.callTool({ name: tools[0].name, arguments: { path } });
+        update(sid, { sessionUpdate: 'tool_call_update', toolCallId: acpId, status: 'completed' });
+        return JSON.stringify(result);
+      };
+      try {
+        let result;
+        if (variant === 'bridge-parallel')
+          result = (await Promise.all([call('first'), call('second')])).join('|');
+        else if (variant === 'bridge-sequential')
+          result = (await call('first')) + '|' + (await call('second'));
+        else result = await call('x');
+        update(sid, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'PROMPTS=' + prompts + ' RESULT=' + result },
+        });
+        ok({ stopReason: 'end_turn' });
+      } finally {
+        await mcp.close();
+      }
+      return;
+    }
     update('unrelated', {
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'text', text: 'WRONG' },

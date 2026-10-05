@@ -4,15 +4,15 @@ Inspected on 2026-10-05. Local reference checkouts/downloads are outside this
 repository and are not shipped. Moving default branches are pinned here for
 reproducibility; dependency peer versions target the matching published alpha.
 
-| Source | Revision / availability | Relevant evidence |
-|---|---|---|
-| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/tree/5badb15009ae1756c3afe0ae0cef1faafc290ccc) | `5badb15009ae1756c3afe0ae0cef1faafc290ccc` | Cookbook, `llm/src/types.ts`, `index.ts`, `message.ts`, retry policy, subagent ACP `index.ts`/`run.ts`, subprocess seam/local provider, plugin bundle composition |
-| [dsh-llm-antigravity](https://github.com/zhangzhangco/dsh-llm-antigravity/tree/dbac23637d81b88f17f71e41a8f28bc81794671f) | `dbac23637d81b88f17f71e41a8f28bc81794671f` | Real primary adapter shape, model discovery methods, `dsh.bundle.patch`, id-targeted profile config, explicit text-only limitations; CLI transport not adopted |
-| [ACP protocol](https://github.com/agentclientprotocol/agent-client-protocol/tree/e04f25ba61e730fb7bf4dcd1fc3d1b40ff330d1e) | `e04f25ba61e730fb7bf4dcd1fc3d1b40ff330d1e` | `docs/protocol/v1/overview.mdx`, authentication and config docs, `schema/v1/schema.json`; cancel is a notification, usage_update is occupancy |
-| [ACP Registry](https://github.com/agentclientprotocol/registry/tree/8ed458f223534a602cc6b74d186c3898a8428b2d) | `8ed458f223534a602cc6b74d186c3898a8428b2d` | Google entry `antigravity-acp/agent.json`, version 1.3.0, platform archives and Linux `--uid=` |
-| [pi-antigravity-bridge](https://github.com/EstebanForge/pi-antigravity-bridge) | Git clone/raw access returned 404; source recovered from author's npm `@estebanforge/pi-antigravity-bridge@1.7.8` | README, license, `src/acp/jsonrpc.ts`, `connection.ts`, `events.ts`, `driver.ts`; indexed AGENTS.md also inspected. Release archive SHA-1 `688e248be164802d95a6ff5b58d115cc1d24f349` |
-| [paseo-agy-acp](https://github.com/tiezbro/paseo-agy-acp/tree/ca9921fa9ad5aa01841df22a2b3fbe41befc0d84) | `ca9921fa9ad5aa01841df22a2b3fbe41befc0d84` | README, official-kernel spawn/login/proxy, admission scheduling, mode mapping, smoke; no compatibility patch, global state injection or account fence adopted |
-| [antigravity-acp-harness](https://github.com/rhgo1749/antigravity-acp-harness) | Git clone, GitHub API and direct source requests returned 404 | Search-indexed primary README describes installer/probe and Hermes provider ownership. Installer/probe/Hermes implementation could not be inspected; no implementation behavior is assumed |
+| Source                                                                                                                     | Revision / availability                                                                                           | Relevant evidence                                                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/tree/5badb15009ae1756c3afe0ae0cef1faafc290ccc)          | `5badb15009ae1756c3afe0ae0cef1faafc290ccc`                                                                        | Cookbook, `llm/src/types.ts`, `index.ts`, `message.ts`, retry policy, subagent ACP `index.ts`/`run.ts`, subprocess seam/local provider, plugin bundle composition                          |
+| [dsh-llm-antigravity](https://github.com/zhangzhangco/dsh-llm-antigravity/tree/dbac23637d81b88f17f71e41a8f28bc81794671f)   | `dbac23637d81b88f17f71e41a8f28bc81794671f`                                                                        | Real primary adapter shape, model discovery methods, `dsh.bundle.patch`, id-targeted profile config, explicit text-only limitations; CLI transport not adopted                             |
+| [ACP protocol](https://github.com/agentclientprotocol/agent-client-protocol/tree/e04f25ba61e730fb7bf4dcd1fc3d1b40ff330d1e) | `e04f25ba61e730fb7bf4dcd1fc3d1b40ff330d1e`                                                                        | `docs/protocol/v1/overview.mdx`, authentication and config docs, `schema/v1/schema.json`; cancel is a notification, usage_update is occupancy                                              |
+| [ACP Registry](https://github.com/agentclientprotocol/registry/tree/8ed458f223534a602cc6b74d186c3898a8428b2d)              | `8ed458f223534a602cc6b74d186c3898a8428b2d`                                                                        | Google entry `antigravity-acp/agent.json`, version 1.3.0, platform archives and Linux `--uid=`                                                                                             |
+| [pi-antigravity-bridge](https://github.com/EstebanForge/pi-antigravity-bridge)                                             | Git clone/raw access returned 404; source recovered from author's npm `@estebanforge/pi-antigravity-bridge@1.7.8` | README, license, `src/acp/jsonrpc.ts`, `connection.ts`, `events.ts`, `driver.ts`; indexed AGENTS.md also inspected. Release archive SHA-1 `688e248be164802d95a6ff5b58d115cc1d24f349`       |
+| [paseo-agy-acp](https://github.com/tiezbro/paseo-agy-acp/tree/ca9921fa9ad5aa01841df22a2b3fbe41befc0d84)                    | `ca9921fa9ad5aa01841df22a2b3fbe41befc0d84`                                                                        | README, official-kernel spawn/login/proxy, admission scheduling, mode mapping, smoke; no compatibility patch, global state injection or account fence adopted                              |
+| [antigravity-acp-harness](https://github.com/rhgo1749/antigravity-acp-harness)                                             | Git clone, GitHub API and direct source requests returned 404                                                     | Search-indexed primary README describes installer/probe and Hermes provider ownership. Installer/probe/Hermes implementation could not be inspected; no implementation behavior is assumed |
 
 ## Conclusions checked against the running server
 
@@ -45,3 +45,30 @@ Node 22.17 on this machine initially made DSH's published Windows subprocess
 runner exit before handling a request. Its entry uses `import.meta.main`; using
 Node 22.22 resolved that without editing DSH. The package requires Node >=22.19,
 also satisfying the published DSH networking dependency's engine range.
+
+## v0.3: verified harness tools over MCP
+
+The Pi investigation found that the earlier missing raw-tool ACP field does not
+prevent client-owned tool execution: register an MCP endpoint, park its tools/call
+request, emit a real harness tool call, and resolve MCP when the harness returns
+its result. The underlying ACP prompt remains active throughout.
+
+- EstebanForge's repository moved to
+  [pi-extensions/packages/pi-antigravity-bridge](https://github.com/EstebanForge/pi-extensions/tree/main/packages/pi-antigravity-bridge).
+  npm 1.7.8 and current provider/MCP code were inspected. It distinguishes native
+  agent actions from Pi extension tools; some built-in tools remain server-owned.
+- [zacbemis/pi-antigravity-acp-provider](https://github.com/zacbemis/pi-antigravity-acp-provider):
+  npm 0.1.12 and src/runtime.ts + src/mcp/bridge.ts were inspected. It forwards
+  harness tools over authenticated loopback MCP and uses exact tool-result IDs
+  to continue pending prompts. Native agent actions remain a separate boundary.
+- [ACP session setup](https://agentclientprotocol.com/protocol/v1/session-setup)
+  defines mcpServers and requires checking the server's HTTP MCP capability.
+- [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
+  defines transport behavior and Origin/authentication expectations. The official
+  SDK implements framing, request handling and transport lifecycle here.
+
+The real Google 1.3.0 probe verified HTTP MCP, exact permission metadata and one
+actual tool result. v0.3 independently implements DSH-owned calls for the full
+current DSH tool catalog, denies native activity, and retains only unfinished
+exchanges. This supersedes the v0.1 text-only conclusion above; it does not turn
+ACP into a raw LLM API or guarantee confinement of native server actions.

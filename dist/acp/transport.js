@@ -6,10 +6,8 @@ export function connectTransport(input, output, onUpdate, onPermission) {
         .onNotification(methods.client.session.update, ({ params }) => {
         onUpdate(params);
     })
-        .onRequest(methods.client.session.requestPermission, () => {
-        // Always answer before scheduling teardown; never select an allow option.
-        queueMicrotask(onPermission);
-        return { outcome: { outcome: 'cancelled' } };
+        .onRequest(methods.client.session.requestPermission, ({ params }) => {
+        return onPermission(params) ?? { outcome: { outcome: 'cancelled' } };
     });
     return app.connect(ndJsonStream(Writable.toWeb(output), Readable.toWeb(input)));
 }

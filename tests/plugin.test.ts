@@ -24,7 +24,7 @@ it('mounts through Cordis, discovers the primary model route, streams through ct
     );
     expect(ctx.llm.listProviders()).toContainEqual({
       id: 'antigravity-acp',
-      name: 'Antigravity (official ACP · text only)',
+      name: 'Antigravity (official ACP)',
     });
     expect(await ctx.llm.listModels('antigravity-acp')).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 'fake-model' })]),

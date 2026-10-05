@@ -21,7 +21,19 @@ No file was modified or repackaged. Startup used stdio pipes and no PTY.
 Client → server:
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false},"clientInfo":{"name":"dsh-antigravity-acp-probe","version":"0.1.0"}}}
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": 1,
+    "clientCapabilities": {
+      "fs": { "readTextFile": false, "writeTextFile": false },
+      "terminal": false
+    },
+    "clientInfo": { "name": "dsh-antigravity-acp-probe", "version": "0.1.0" }
+  }
+}
 ```
 
 Server → client (selected fields from response):
@@ -29,19 +41,19 @@ Server → client (selected fields from response):
 ```json
 {
   "protocolVersion": 1,
-  "agentInfo": {"name":"antigravity-acp","title":"Google Antigravity","version":"1.3.0"},
+  "agentInfo": { "name": "antigravity-acp", "title": "Google Antigravity", "version": "1.3.0" },
   "agentCapabilities": {
     "loadSession": true,
-    "promptCapabilities": {"image":true,"audio":true,"embeddedContext":true},
-    "mcpCapabilities": {"http":true,"sse":true},
-    "sessionCapabilities": {"list":{},"resume":{}},
-    "auth": {"logout":{}}
+    "promptCapabilities": { "image": true, "audio": true, "embeddedContext": true },
+    "mcpCapabilities": { "http": true, "sse": true },
+    "sessionCapabilities": { "list": {}, "resume": {} },
+    "auth": { "logout": {} }
   },
   "authMethods": [
-    {"id":"oauth-personal","name":"Log in with Google"},
-    {"id":"oauth-business","name":"Log in with Gemini Enterprise"},
-    {"id":"gemini-api-key","name":"Gemini API key"},
-    {"id":"agent-platform","name":"Gemini Enterprise Agent Platform"}
+    { "id": "oauth-personal", "name": "Log in with Google" },
+    { "id": "oauth-business", "name": "Log in with Gemini Enterprise" },
+    { "id": "gemini-api-key", "name": "Gemini API key" },
+    { "id": "agent-platform", "name": "Gemini Enterprise Agent Platform" }
   ]
 }
 ```
@@ -49,7 +61,7 @@ Server → client (selected fields from response):
 Client → server:
 
 ```json
-{"jsonrpc":"2.0","id":2,"method":"authenticate","params":{"methodId":"oauth-personal"}}
+{ "jsonrpc": "2.0", "id": 2, "method": "authenticate", "params": { "methodId": "oauth-personal" } }
 ```
 
 The request succeeded. Authentication was performed by the Google process;
@@ -58,7 +70,12 @@ the probe did not read credential files, capture tokens or construct OAuth URLs.
 Client → server:
 
 ```json
-{"jsonrpc":"2.0","id":3,"method":"session/new","params":{"cwd":"<absolute probe directory>","mcpServers":[]}}
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "session/new",
+  "params": { "cwd": "<absolute probe directory>", "mcpServers": [] }
+}
 ```
 
 The response included a session ID, `configOptions` and modes. Model option:
@@ -72,7 +89,15 @@ These are observed examples, **not a hardcoded shipped model catalog**.
 Client → server:
 
 ```json
-{"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{"sessionId":"<redacted>","prompt":[{"type":"text","text":"Reply exactly with ACP_OK. Do not use tools."}]}}
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "session/prompt",
+  "params": {
+    "sessionId": "<redacted>",
+    "prompt": [{ "type": "text", "text": "Reply exactly with ACP_OK. Do not use tools." }]
+  }
+}
 ```
 
 Observed notification sequence:
@@ -86,7 +111,7 @@ session/update: usage_update (context occupancy; values not recorded by initial 
 Observed final response:
 
 ```json
-{"jsonrpc":"2.0","id":4,"result":{"stopReason":"end_turn"}}
+{ "jsonrpc": "2.0", "id": 4, "result": { "stopReason": "end_turn" } }
 ```
 
 The initial probe closed stdin and terminated the process after its bounded
@@ -162,3 +187,86 @@ earlier official login; this record does **not** claim a fresh browser-consent
 test. The zero-config fake-server integration separately verifies that first
 generation invokes `oauth-personal` and continues after authentication, without
 a CLI login command. No manual visual interaction with the DSH UI is claimed.
+
+## Version 0.3: MCP tool execution
+
+On 2026-10-05 an additional raw probe used the official ACP and MCP SDKs with
+Google's unmodified Windows x64 1.3.0 server. initialize advertised HTTP MCP.
+session/new received a loopback dsh-bridge descriptor and ephemeral bearer token.
+The official permission and tool events contained:
+
+```json
+{
+  "_meta": {
+    "mcp": { "tool": "dsh_probe_token", "server": "dsh-bridge" },
+    "is_mcp_tool_call": true
+  }
+}
+```
+
+Selecting allow_once reached the real MCP endpoint exactly once; its returned
+marker appeared in the assistant answer. Completed tool updates could omit the
+metadata, so the provider tracks known ACP IDs. Native updates are not emitted
+as DSH execution requests. This probe establishes a client-owned execution route
+through MCP; the earlier text-only conclusion is superseded by this evidence.
+
+The new opt-in scripts/smoke-tools-real.mjs mounted the actual Cordis plugin and
+LlmRuntime, received normal DSH tool-call blocks, returned one success and one
+isError permission-denial result, and continued the pending ACP prompt:
+
+```text
+DSH_TOOL_CALL probe_marker RETURNED
+DSH_TOOL_CALL denied_action DENIED
+ANSWER Marker: REAL_TOOL_MARKER_5c72d8; second tool denied
+REAL_DSH_LLM_TOOL_SMOKE_OK
+```
+
+This test supplies the harness result directly through LlmRuntime; it does not
+claim an interactive permission-dialog test.
+
+The v0.3 tarball was installed by DSH's ordinary plugin manager in the isolated
+headless profile. The user patch remained [] and no command, provider, model,
+MCP or API key was configured. With the automatically provisioned cached server,
+the actual DSH application created and read back a validation file:
+
+```text
+DSH_TOOL_EXECUTION_OK
+```
+
+Its durable session records contain DSH write and read tool-call blocks with
+acp\_ correlation IDs and matching successful tool/result messages. The file bytes
+were independently checked. This verifies the real installed DSH agent loop,
+its own tools and persistence, not only a simulated tool handler.
+
+The command check reached the actual DSH pwsh tool. This machine's default
+workspace-write sandbox returned SetNamedSecurityInfoW failed (Win32 5) while
+preparing the workspace ACL, before shell execution. That is a host DSH sandbox
+failure, and was preserved as an error tool result. A later native Antigravity
+tool attempt was cancelled by the provider. Explicit MCP name mappings were
+added to the prompt to improve routing; they do not guarantee model compliance.
+No ACL repair, user profile permission change or automatic escalation was added.
+
+Fake-server tests were written and run failing before the bridge implementation.
+They exercise real MCP SDK transports, JSON-schema rejection, bearer/Origin
+checks, permission routing, exact result correlation, concurrent conversations,
+parallel and sequential rounds, cancellation while parked, consumer early return,
+context/catalog changes, missing results, capacity limits and paused deadlines.
+Google model nondeterminism and the official agent's own instructions remain
+outside the plugin's control. No visual UI or fresh Google-consent test is claimed.
+
+### Command execution isolated from the host ACL failure
+
+The same installed DSH profile was launched once with its built-in
+DSH_PERMISSION_MODE=danger-full-access **for that validation process only**, in
+line with this task's permitted execution mode. No profile patch or ACL was
+changed. The prompt requested exactly one harmless DSH pwsh call, echoing a
+marker, and forbade repair, other tools and native Antigravity actions. It returned:
+
+```text
+DSH_COMMAND_EXECUTION_OK
+```
+
+Exit status was zero. This verifies actual command execution through the DSH
+agent loop and bridge. The default workspace-write test above separately verifies
+that a host sandbox error is preserved. The plugin neither fixes nor bypasses
+DSH's sandbox; a normal installation keeps the user's chosen permissions.

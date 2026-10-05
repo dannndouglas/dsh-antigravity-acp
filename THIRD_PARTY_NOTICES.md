@@ -16,10 +16,12 @@ Architectural references:
   and managed subprocess lifecycle.
 - [dsh-llm-antigravity](https://github.com/zhangzhangco/dsh-llm-antigravity), MIT:
   bundle patch packaging and the explicit text-provider limitation.
-- [pi-antigravity-bridge](https://github.com/EstebanForge/pi-antigravity-bridge), MIT:
-  ACP connection, stream mapping, turn serialization and reset concepts.
-  Source inspected from the author's npm release 1.7.8 because GitHub retrieval
-  was unavailable. No source copied.
+- [pi-antigravity-bridge](https://github.com/EstebanForge/pi-extensions/tree/main/packages/pi-antigravity-bridge), MIT:
+  ACP connection and parked MCP-to-harness tool round trips. Source inspected
+  from npm release 1.7.8 and its current monorepo. No source copied.
+- [pi-antigravity-acp-provider](https://github.com/zacbemis/pi-antigravity-acp-provider), MIT:
+  npm release 0.1.12 and repository inspected for MCP forwarding, continuation
+  identity and native-agent ownership boundaries. No source copied.
 - [paseo-agy-acp](https://github.com/tiezbro/paseo-agy-acp), Apache-2.0:
   official kernel lifecycle, permission modes and Linux Registry launch flags.
   No source copied and no compatibility injection adopted.

@@ -13,9 +13,11 @@ import { aborted, classify } from './acp/errors.js';
 import { modelCatalog } from './models.js';
 import { buildPrompt } from './prompt.js';
 import type { Config } from './config.js';
+import { ToolSessions } from './mcp/sessions.js';
 
 export class AntigravityAcpAdapter extends LlmAdapter {
   readonly client: AcpClient;
+  private tools: ToolSessions;
   private tail: Promise<void> = Promise.resolve();
   private disposed = false;
   private lifetime = new AbortController();
@@ -29,9 +31,10 @@ export class AntigravityAcpAdapter extends LlmAdapter {
   ) {
     super();
     this.client = new AcpClient(config, runtime, warn);
+    this.tools = new ToolSessions(config, runtime, warn);
   }
   providerInfo(provider: string) {
-    return { id: provider, name: 'Antigravity (official ACP · text only)' };
+    return { id: provider, name: 'Antigravity (official ACP)' };
   }
 
   private async acquire(signal?: AbortSignal): Promise<() => void> {
@@ -86,7 +89,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
         ...m,
         provider,
         inputModalities: ['text'],
-        description: 'Official ACP text backend; DSH tool execution unavailable',
+        description: 'Official ACP backend with DSH tools through MCP',
       }));
     } finally {
       release();
@@ -108,9 +111,10 @@ export class AntigravityAcpAdapter extends LlmAdapter {
   diagnostics() {
     return {
       connected: this.client.connected,
-      processStarts: this.client.processStarts,
-      authentications: this.client.authentications,
-      generations: this.generations,
+      processStarts: this.client.processStarts + this.tools.processStarts,
+      authentications: this.client.authentications + this.tools.authentications,
+      generations: this.generations + this.tools.generations,
+      activeToolSessions: this.tools.active,
     };
   }
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -120,6 +124,10 @@ export class AntigravityAcpAdapter extends LlmAdapter {
         ? AbortSignal.any([options.signal, this.lifetime.signal])
         : this.lifetime.signal,
     };
+    if (this.config.toolPolicy === 'bridge' && (options.tools?.length || this.tools.has(options))) {
+      yield* this.tools.stream(options);
+      return;
+    }
     const prompt = buildPrompt(options, this.config); // Validate before spawning or authenticating.
     const release = await this.acquire(options.signal);
     const mapper = new EventMapper();
@@ -214,6 +222,6 @@ export class AntigravityAcpAdapter extends LlmAdapter {
   async dispose(): Promise<void> {
     this.disposed = true;
     this.lifetime.abort();
-    await this.client.dispose();
+    await Promise.all([this.client.dispose(), this.tools.dispose()]);
   }
 }

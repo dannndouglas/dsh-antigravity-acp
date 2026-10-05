@@ -4,10 +4,12 @@ import { EventMapper, finishReason } from './acp/events.js';
 import { aborted, classify } from './acp/errors.js';
 import { modelCatalog } from './models.js';
 import { buildPrompt } from './prompt.js';
+import { ToolSessions } from './mcp/sessions.js';
 export class AntigravityAcpAdapter extends LlmAdapter {
     config;
     warn;
     client;
+    tools;
     tail = Promise.resolve();
     disposed = false;
     lifetime = new AbortController();
@@ -19,9 +21,10 @@ export class AntigravityAcpAdapter extends LlmAdapter {
         this.config = config;
         this.warn = warn;
         this.client = new AcpClient(config, runtime, warn);
+        this.tools = new ToolSessions(config, runtime, warn);
     }
     providerInfo(provider) {
-        return { id: provider, name: 'Antigravity (official ACP · text only)' };
+        return { id: provider, name: 'Antigravity (official ACP)' };
     }
     async acquire(signal) {
         if (this.disposed)
@@ -80,7 +83,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
                 ...m,
                 provider,
                 inputModalities: ['text'],
-                description: 'Official ACP text backend; DSH tool execution unavailable',
+                description: 'Official ACP backend with DSH tools through MCP',
             }));
         }
         finally {
@@ -100,9 +103,10 @@ export class AntigravityAcpAdapter extends LlmAdapter {
     diagnostics() {
         return {
             connected: this.client.connected,
-            processStarts: this.client.processStarts,
-            authentications: this.client.authentications,
-            generations: this.generations,
+            processStarts: this.client.processStarts + this.tools.processStarts,
+            authentications: this.client.authentications + this.tools.authentications,
+            generations: this.generations + this.tools.generations,
+            activeToolSessions: this.tools.active,
         };
     }
     async *stream(options) {
@@ -112,6 +116,10 @@ export class AntigravityAcpAdapter extends LlmAdapter {
                 ? AbortSignal.any([options.signal, this.lifetime.signal])
                 : this.lifetime.signal,
         };
+        if (this.config.toolPolicy === 'bridge' && (options.tools?.length || this.tools.has(options))) {
+            yield* this.tools.stream(options);
+            return;
+        }
         const prompt = buildPrompt(options, this.config); // Validate before spawning or authenticating.
         const release = await this.acquire(options.signal);
         const mapper = new EventMapper();
@@ -199,6 +207,6 @@ export class AntigravityAcpAdapter extends LlmAdapter {
     async dispose() {
         this.disposed = true;
         this.lifetime.abort();
-        await this.client.dispose();
+        await Promise.all([this.client.dispose(), this.tools.dispose()]);
     }
 }

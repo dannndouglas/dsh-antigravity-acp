@@ -1,7 +1,7 @@
 {
   "name": "dsh-antigravity-acp",
-  "version": "0.2.0",
-  "description": "Official Google Antigravity ACP text provider for DeepSeek Harness",
+  "version": "0.3.0",
+  "description": "Official Google Antigravity ACP provider with DSH-owned tools over MCP",
   "type": "module",
   "license": "MIT",
   "main": "dist/index.js",
@@ -54,6 +54,8 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "1.4.0",
     "@deepseek-ai/schemastery": "3.18.5-alpha.1",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "ajv": "8.20.0",
     "yauzl": "3.4.0"
   },
   "peerDependencies": {

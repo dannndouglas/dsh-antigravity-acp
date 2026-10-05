@@ -8,7 +8,9 @@ export const Config = z.object({
     auth: z.const('oauth-personal').default('oauth-personal'),
     defaultModel: z.string().default(''),
     models: z.array(z.string()).default([]),
-    toolPolicy: z.union(['text-only', 'reject']).default('text-only'),
+    toolPolicy: z.union(['bridge', 'text-only', 'reject']).default('bridge'),
+    toolTimeoutMs: z.natural().default(900000),
+    maxActiveToolSessions: z.natural().default(16),
     timeoutMs: z.natural().default(600000),
     requestTimeoutMs: z.natural().default(30000),
     authTimeoutMs: z.natural().default(600000),
@@ -28,6 +30,8 @@ export function resolveConfig(input = {}) {
         'cancelGraceMs',
         'disposeGraceMs',
         'maxSessionsPerProcess',
+        'toolTimeoutMs',
+        'maxActiveToolSessions',
     ]) {
         if (!Number.isSafeInteger(config[key]) || config[key] <= 0 || config[key] > 2147483647)
             throw new Error(`${key} must be a positive integer <= 2147483647`);

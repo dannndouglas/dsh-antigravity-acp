@@ -1,4 +1,4 @@
-import { type InitializeResponse, type NewSessionResponse, type SessionNotification, type PromptResponse } from '@agentclientprotocol/sdk';
+import { type InitializeResponse, type NewSessionResponse, type SessionNotification, type PromptResponse, type McpServer, type RequestPermissionRequest, type RequestPermissionResponse } from '@agentclientprotocol/sdk';
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess';
 import type { Config } from '../config.js';
 /** One process per adapter, serialized by the adapter. No credentials or history are persisted here. */
@@ -16,15 +16,15 @@ export declare class AcpClient {
     processStarts: number;
     authentications: number;
     onUpdate?: (event: SessionNotification) => void;
-    onPermission?: () => void;
+    onPermission?: (request: RequestPermissionRequest) => void | RequestPermissionResponse;
     constructor(config: Config, runtime: SubprocessRuntime, notify?: (message: string) => void);
     get connected(): boolean;
     private bounded;
     start(signal?: AbortSignal): Promise<void>;
     login(signal?: AbortSignal): Promise<void>;
-    newSession(signal?: AbortSignal, authenticate?: boolean): Promise<NewSessionResponse>;
+    newSession(signal?: AbortSignal, authenticate?: boolean, mcpServers?: McpServer[]): Promise<NewSessionResponse>;
     selectModel(session: NewSessionResponse, model: string, signal?: AbortSignal): Promise<void>;
-    prompt(sessionId: string, text: string, signal?: AbortSignal): Promise<PromptResponse>;
+    prompt(sessionId: string, text: string, signal?: AbortSignal, timeoutMs?: number): Promise<PromptResponse>;
     logout(signal?: AbortSignal): Promise<void>;
     cancelAndReset(sessionId?: string): Promise<void>;
     reset(): Promise<void>;

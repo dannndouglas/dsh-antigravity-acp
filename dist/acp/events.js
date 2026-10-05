@@ -1,5 +1,8 @@
 export class EventMapper {
     blocks = new Map();
+    get blockCount() {
+        return this.blocks.size;
+    }
     get hasText() {
         return !!this.blocks.get('text')?.text;
     }

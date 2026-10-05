@@ -86,12 +86,12 @@ export class AcpClient {
                 throw new LlmError('ACP subprocess did not expose stdio pipes.', 'ACP_DISCONNECTED');
             // Drain without logging or retaining server diagnostics (may contain account/auth data).
             child.stderr?.resume();
-            const connection = connectTransport(child.stdout, child.stdin, (event) => this.onUpdate?.(event), () => this.onPermission?.());
+            const connection = connectTransport(child.stdout, child.stdin, (event) => this.onUpdate?.(event), (request) => this.onPermission?.(request));
             this.connection = connection;
             void child.done.then(() => connection.close(), () => connection.close());
             const init = await this.bounded(connection.agent.request(methods.agent.initialize, {
                 protocolVersion: 1,
-                clientInfo: { name: 'dsh-antigravity-acp', version: '0.2.0' },
+                clientInfo: { name: 'dsh-antigravity-acp', version: '0.3.0' },
                 clientCapabilities: {
                     fs: { readTextFile: false, writeTextFile: false },
                     terminal: false,
@@ -115,14 +115,14 @@ export class AcpClient {
         await this.bounded(this.connection.agent.request(methods.agent.authenticate, { methodId: method.id }), this.config.authTimeoutMs, signal);
         this.authentications++;
     }
-    async newSession(signal, authenticate = true) {
+    async newSession(signal, authenticate = true, mcpServers = []) {
         // ACP has no universal session disposal; periodically recycle between turns.
         if (this.sessionCount >= this.config.maxSessionsPerProcess)
             await this.reset();
         await this.start(signal);
         const create = () => this.bounded(this.connection.agent.request(methods.agent.session.new, {
             cwd: this.cwd,
-            mcpServers: [],
+            mcpServers,
         }), this.config.requestTimeoutMs, signal);
         let session;
         try {
@@ -152,11 +152,11 @@ export class AcpClient {
             value: wanted,
         }), this.config.requestTimeoutMs, signal);
     }
-    prompt(sessionId, text, signal) {
+    prompt(sessionId, text, signal, timeoutMs = this.config.timeoutMs) {
         return this.bounded(this.connection.agent.request(methods.agent.session.prompt, {
             sessionId,
             prompt: [{ type: 'text', text }],
-        }), this.config.timeoutMs, signal);
+        }), timeoutMs, signal);
     }
     async logout(signal) {
         await this.start(signal);

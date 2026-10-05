@@ -2,6 +2,9 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import type { StreamChunk, FinishReason } from '@deepseek-ai/dsh-llm';
 export class EventMapper {
   private blocks = new Map<'text' | 'reasoning', { index: number; text: string }>();
+  get blockCount(): number {
+    return this.blocks.size;
+  }
   get hasText(): boolean {
     return !!this.blocks.get('text')?.text;
   }

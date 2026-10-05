@@ -9,6 +9,9 @@ import {
   type NewSessionResponse,
   type SessionNotification,
   type PromptResponse,
+  type McpServer,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
 } from '@agentclientprotocol/sdk';
 import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess';
 import type { Config } from '../config.js';
@@ -29,7 +32,7 @@ export class AcpClient {
   processStarts = 0;
   authentications = 0;
   onUpdate?: (event: SessionNotification) => void;
-  onPermission?: () => void;
+  onPermission?: (request: RequestPermissionRequest) => void | RequestPermissionResponse;
   constructor(
     readonly config: Config,
     readonly runtime: SubprocessRuntime,
@@ -102,7 +105,7 @@ export class AcpClient {
         child.stdout,
         child.stdin,
         (event) => this.onUpdate?.(event),
-        () => this.onPermission?.(),
+        (request) => this.onPermission?.(request),
       );
       this.connection = connection;
       void child.done.then(
@@ -112,7 +115,7 @@ export class AcpClient {
       const init = await this.bounded(
         connection.agent.request(methods.agent.initialize, {
           protocolVersion: 1,
-          clientInfo: { name: 'dsh-antigravity-acp', version: '0.2.0' },
+          clientInfo: { name: 'dsh-antigravity-acp', version: '0.3.0' },
           clientCapabilities: {
             fs: { readTextFile: false, writeTextFile: false },
             terminal: false,
@@ -149,7 +152,11 @@ export class AcpClient {
     this.authentications++;
   }
 
-  async newSession(signal?: AbortSignal, authenticate = true): Promise<NewSessionResponse> {
+  async newSession(
+    signal?: AbortSignal,
+    authenticate = true,
+    mcpServers: McpServer[] = [],
+  ): Promise<NewSessionResponse> {
     // ACP has no universal session disposal; periodically recycle between turns.
     if (this.sessionCount >= this.config.maxSessionsPerProcess) await this.reset();
     await this.start(signal);
@@ -157,7 +164,7 @@ export class AcpClient {
       this.bounded(
         this.connection!.agent.request(methods.agent.session.new, {
           cwd: this.cwd!,
-          mcpServers: [],
+          mcpServers,
         }),
         this.config.requestTimeoutMs,
         signal,
@@ -201,13 +208,18 @@ export class AcpClient {
     );
   }
 
-  prompt(sessionId: string, text: string, signal?: AbortSignal): Promise<PromptResponse> {
+  prompt(
+    sessionId: string,
+    text: string,
+    signal?: AbortSignal,
+    timeoutMs = this.config.timeoutMs,
+  ): Promise<PromptResponse> {
     return this.bounded(
       this.connection!.agent.request(methods.agent.session.prompt, {
         sessionId,
         prompt: [{ type: 'text', text }],
       }),
-      this.config.timeoutMs,
+      timeoutMs,
       signal,
     );
   }

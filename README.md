@@ -1,240 +1,184 @@
 # dsh-antigravity-acp
 
-Use Google's **official Antigravity ACP server** as a **primary text model
-provider** in DeepSeek Harness. Authentication is delegated to the official server's `oauth-personal`
-method. No API key is configured in this plugin.
+Use your Google Antigravity account as the **primary model in DeepSeek Harness**,
+with **DSH-owned tools**, through Google's official ACP server. No API key.
 
-**Install in DSH and chat.** The plugin automatically downloads Google's official
-server when needed and selects Antigravity as the default for new chats. No binary
-installation, environment variable, configuration file or login command is needed.
-If your account is not already authorized, the official server opens the browser
-on your first message; approve Google's login and the conversation continues.
+**Install in DSH and chat.** The plugin downloads the official server, discovers
+models, selects Antigravity for fresh chats and connects DSH's tools automatically.
+No binary installation, environment variable, configuration file, MCP setup or
+terminal login is required. If needed, the official server opens Google's browser
+login on your first message; approve it and the conversation continues.
 
-**Version 0.2 is a text/reasoning backend. It cannot execute DSH tools.** ACP
-exposes a complete agent, not a raw LLM API; native ACP tool activity is rejected
-rather than represented as DSH tool calls. DSH owns its conversation, UI and
-context; its coding tools and MCP are unavailable through this route.
+Version **0.3** adds a private MCP bridge. Antigravity requests a tool; DSH applies
+its normal permissions, runs the tool and returns the real result. Files,
+commands and installed extension tools use this same DSH execution path.
 
 [Português](docs/README.pt-BR.md) · [Architecture](docs/architecture.md) ·
-[Real probe](docs/agy-acp-probe.md) · [Research](docs/research.md)
+[Real verification](docs/agy-acp-probe.md) · [Research](docs/research.md)
 
-```text
-DSH primary LlmAdapter → ACP v1 / JSON-RPC / stdio
-                     → official agy_acp_server → Google Antigravity
-```
+## Install
 
-## Requirements
-
-- Node.js **22.19 or newer** (tested with 22.22.0).
-- DSH **0.2.1-alpha.1**, Cordis 4.0.5-alpha.1. Peer versions are intentionally
-  pinned to the inspected and tested DSH release. Older releases are unverified.
-- Internet access for automatic installation of Google's official ACP server. Tested on Windows x64
-  with **1.3.0**. Fake-server CI covers Windows, macOS and Linux.
-- A Google account accepted by the official server. Credentials stay in its
-  own storage; the plugin never reads that storage.
-
-This plugin is independent of Google and DeepSeek. The official server and
-account remain subject to [Google's terms](https://antigravity.google/terms).
-Using an official binary establishes a transport boundary; it does not establish
-permission under account/service terms.
-
-## Install and use
+Requires Node.js **>=22.19** and DSH **0.2.1-alpha.1**. Tested with Google's
+server **1.3.0** on Windows x64; fake-server CI covers Windows, Linux and macOS.
+Automatic downloads support all three operating systems on x64 and arm64.
 
 ```sh
 dsh plugin --profile web add git+https://github.com/dannndouglas/dsh-antigravity-acp.git
 ```
 
-The package's `dsh.bundle.patch` mounts `llm-antigravity-acp` automatically.
-Open that DSH profile and send a message. No terminal setup is needed after adding
-the plugin. Existing running profiles may need their normal reload/restart.
-The installation requires its normal `llm` and
-`subprocess` services, and does not edit DSH core or a global installation.
-The built `dist/` is committed so Git installations do not need a TypeScript
-compiler. For a local checkout:
+Open the profile and send a message. A running profile may need its ordinary
+reload. The package bundle mounts the provider and default model. Explicit saved
+profile/session selections retain DSH's normal precedence. You can choose any
+announced model in the ordinary model picker.
 
-```sh
-npm ci
-npm run build
-npm pack
-dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.2.0.tgz
-```
-
-## Automatic server and login
-
-The first model lookup or message checks for an existing server and otherwise
-downloads the **complete, unmodified** 1.3.0 archive directly from `dl.google.com`,
-using the six URLs in the [official ACP Registry](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json).
-Windows, macOS and Linux on x64/arm64 are supported. The first download can take
-a few minutes. Its versioned cache lives in `$DSH_HOME/cache/antigravity-acp` when
-DSH provides that variable, or `~/.cache/dsh-antigravity-acp` otherwise. Later
-launches reuse it without another download; chat still needs Google connectivity.
-There is no npm postinstall script, administrator requirement or bundled Google binary.
-
-Downloads use HTTPS with normal certificate validation and reject redirects.
-ZIP extraction rejects unsafe paths, symlinks and oversized archives. A complete
-cache is published atomically and incomplete downloads are removed. No upstream
-checksum is advertised by the Registry; authenticity relies on the pinned Google
-HTTPS origin, rather than an invented vendor checksum.
-
-Google authorization happens automatically on the first message that requires
-it. It remains a browser consent flow owned by the official server; the plugin
-cannot approve your Google account for you. Credential reuse is server-owned.
-Model discovery does not open a login browser in the background.
-
-The bundle sets `agent-default-model` to `antigravity-acp/server-default`, so fresh
-chats work without selecting a model. Explicit saved profile/session choices
-still take precedence. You can optionally choose another announced model in
-DSH's normal model picker. Models come from ACP `configOptions`, not a private API.
-
-For advanced diagnostics only, the checkout provides these optional commands:
-
-```sh
-node dist/cli.js status
-node dist/cli.js doctor
-node dist/cli.js probe
-```
-
-The installed package also exports the `dsh-antigravity-acp` command with
-`login`, `status`, `doctor`, `logout`, and `probe`. `npm run auth` and
-`npm run probe` also support automatic installation. The optional login command calls `initialize`, checks
-the advertised method, then asks **the official server** to authenticate.
-Complete its browser flow if needed. No callback/token copy is requested.
-
-The standalone CLI needs the optional `@deepseek-ai/dsh-subprocess-local` peer
-supplied by DSH or by this checkout's dev dependencies. Normal plugin activation
-uses the host's injected `ctx.subprocess`; it does not install another local
-runtime or native build scripts into a DSH profile.
-
-`status`/`doctor` never initiate OAuth: they test authenticated session creation.
-Generation authenticates only if the server replies with an authentication
-requirement. Restarting DSH reuses whatever authenticated state the official
-server already owns. `logout` uses the official ACP method only when announced;
-it ends that server's account state and may affect other clients using it.
-
-## Optional configuration
-
-No configuration is required. Discovery order is `config.command`, `AGY_ACP_BIN`,
-PATH, `~/.local/bin`, `~/.local/share/antigravity-acp`, then automatic installation.
-An explicit override is authoritative; an invalid path fails instead of silently
-downloading another executable. Linux servers receive the Registry's `--uid=` flag.
-
-In the **profile's** `cordis.patch.yml`, target the already inserted row:
-
-```yaml
-- id: llm-antigravity-acp
-  config:
-    command: /absolute/path/to/agy_acp_server.par
-    auth: oauth-personal
-    provider: antigravity-acp
-    toolPolicy: text-only
-```
-
-On Windows use a single-quoted path, for example
-`command: 'C:\Tools\antigravity-acp\agy_acp_server.exe'`. Do not add another
-`insert` with the same row ID. An id-targeted patch replaces `config`; the schema
-fills omitted defaults.
-
-| Option | Default | Meaning |
-|---|---|---|
-| `provider` | `antigravity-acp` | DSH provider route |
-| `command` | empty | Official executable discovery |
-| `autoInstall` | `true` | Download the official server automatically when none is found |
-| `installTimeoutMs` | `180000` | Automatic download/extraction deadline |
-| `args` | `[]` | Extra argv, never shell-interpreted |
-| `auth` | `oauth-personal` | Only accepted authentication method |
-| `defaultModel` | empty | Exact ACP model ID; empty uses server default |
-| `models` | `[]` | Additional advertised IDs, still validated against server at generation |
-| `toolPolicy` | `text-only` | Explicitly omit current DSH tool schemas; warn once. `reject` refuses requests carrying tools |
-| `timeoutMs` | `600000` | Prompt wall-clock deadline |
-| `requestTimeoutMs` | `30000` | Handshake/session/config deadline |
-| `authTimeoutMs` | `600000` | Official browser authentication deadline |
-| `cancelGraceMs` | `1500` | Bound for writing ACP cancel |
-| `disposeGraceMs` | `3000` | EOF grace before managed process termination |
-| `maxSessionsPerProcess` | `100` | Recycle between turns to bound retained ACP sessions |
-
-## Why this does NOT use Antigravity private APIs
-
-The plugin communicates only with a **local official subprocess** through ACP
-stdio. Its only Google HTTP request downloads the official server archive.
-It has no model-API client, OAuth implementation, token reader, or
-credential persistence. All model/backend networking is performed by Google's
-unmodified executable. This statement concerns **this plugin's source**; it does
-not claim that Google's own binary uses only public HTTP endpoints internally.
-
-`npm run check` scans `src/` and `dist/` for `v1internal`, `cloudcode`,
-`refresh_token`, and `client_secret`, and rejects insecure TLS overrides.
-Those names occur only in this explanation and the check script's denylist.
-No credential values are included. The package allowlist excludes tests,
-local runtime downloads and proprietary binaries.
-
-## Known limitations
-
-- **ACP Agent ≠ raw LLM provider.** No native DSH tool calls, tool-choice
-  controls, or tool-call deltas. Existing tool results in DSH history are sent
-  as text/JSON context, not executed again. Native ACP tool updates cause an
-  explicit `ACP_NATIVE_TOOLS_UNSUPPORTED` error and reset the process.
-- ACP permission modes are approval modes, not a tools-off switch. Every
-  permission request is denied; filesystem/terminal capabilities are false;
-  no MCP servers are supplied. Sessions use an empty temporary directory rather
-  than the DSH workspace. This reduces ambient context but **is not an OS sandbox**
-  and cannot guarantee that an agent does nothing before announcing activity.
-- DSH system messages are serialized into the ACP user prompt. ACP has no
-  separate raw-model system slot; the official agent's own instructions remain.
-- Every generation creates a fresh ACP session and sends the full DSH history.
-  No server history is replayed into DSH, so compaction and provider switching
-  stay under DSH control. This trades server session reuse/caching for consistency.
-- One prompt at a time per adapter connection. Calls queue; queued aborts do
-  not cancel another session. Separate DSH processes do not share a cross-process
-  account lock. Multiple accounts are outside v0.2.
-- Reasoning text streams if the server sends `agent_thought_chunk`. ACP
-  `usage_update` is context occupancy, **not billable per-request usage**; no
-  fabricated usage is emitted. Token billing and unknown context capacity remain
-  unreported. No image/audio input, persistent session resume, or settings UI.
-- `temperature`, `maxTokens`, `stop`, and explicit `reasoningEffort` are rejected
-  with `UNSUPPORTED_OPTION`; choose an exact server model variant instead.
-- Cancellation sends the ACP **notification** `session/cancel`, then closes
-  the connection and performs managed cleanup. The next turn reconnects; v0.2
-  does not depend on undocumented cancellation acknowledgments.
-- A cold model list can wait for the first automatic download and session/handshake deadlines. On failure,
-  the selector offers `server-default` so the route remains discoverable, with
-  a readable diagnostic. The first message starts browser authorization if needed.
-
-## Troubleshooting
-
-| Code / symptom | Action |
-|---|---|
-| `ACP_INSTALL_FAILED` | Check connectivity/free disk space and retry in DSH; installation retries automatically |
-| `ACP_PLATFORM_UNSUPPORTED` | Automatic binaries are available for Windows/macOS/Linux x64 and arm64 |
-| `ACP_BINARY_MISSING` | Remove a broken explicit override or re-enable `autoInstall` |
-| `ACP_AUTH_REQUIRED` | Send a message and complete the browser authorization opened by the official server |
-| `ACP_AUTH_UNSUPPORTED` | Verify this is the official server and it advertises `oauth-personal` |
-| `ACP_VERSION_MISMATCH` | Use an official server supporting ACP v1 |
-| `ACP_INVALID_MODEL` | Run `doctor`; use an exact announced ID |
-| `ACP_INVALID_PARAMS` | Remove unsupported settings; check server compatibility |
-| `ACP_TIMEOUT` / `ACP_DISCONNECTED` | Retry to reconnect; check connectivity and official server installation |
-| `ACP_NATIVE_TOOLS_UNSUPPORTED` | Ask for conversational text; use another DSH provider for coding tools |
-| `ACP_TEARDOWN_FAILED` | Restart the DSH profile; the process provider could not prove cleanup |
-| `UNSUPPORTED_OPTION` | Remove sampling/reasoning controls unsupported by ACP |
-| Windows Job runner exits before responding | Verify Node.js >=22.19; older Node lacks the DSH runner entry semantics |
-
-Raw subprocess stderr and remote error data are drained without being logged
-or retained, because they can contain authentication/account information.
-The CLI prints only whitelisted protocol/account-status facts; it does not
-display raw authentication frames.
-
-## Development and verification
+The built dist is committed so Git installation needs no compiler. The package
+uses the host's llm and subprocess services without editing DSH core or a global
+installation. Development checkout:
 
 ```sh
 npm ci
 npm run check
+npm pack
+dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.0.tgz
+```
+
+## How tools work
+
+```text
+DSH primary provider → ACP v1 / stdio → official agy_acp_server → Google
+                               ↑
+                private loopback MCP bridge
+                               ↓
+                DSH permissions and tool execution
+```
+
+Tool schemas are exported automatically to the bridge. A validated MCP request
+becomes an ordinary DSH tool-call block, using its original name and arguments.
+The MCP request stays pending while the DSH agent loop executes it. A subsequent
+DSH generation returns the matching tool result and resumes the **same** ACP
+prompt. Parallel calls, sequential tool rounds, failures and permission denials
+are supported. A denied action stays denied; no bypass is attempted by the plugin.
+
+ACP's native tool notifications are never re-executed in DSH. Bridge calls are
+identified by the official server's MCP metadata. Only permission to reach this
+bridge is allowed, once per request; actual tool execution still belongs to DSH.
+Native Antigravity tools outside the bridge cause cancellation and an explicit
+error. YOLO mode, client filesystem and client terminal capabilities stay off.
+The official executable is an agent, so these protocol guardrails **are not an
+OS sandbox** and cannot undo a native action performed before its notification.
+
+DSH remains the history authority. Independent turns start from full DSH context;
+only an unfinished tool round trip retains ACP state. Context/model/catalog
+changes discard stale exchanges. Tool turns use separate managed processes,
+allowing concurrent chats and provider calls from subagent tools. Cancellation
+remains active while DSH is running a tool or awaiting approval.
+
+## Automatic server and login
+
+The complete, unmodified server archive is fetched directly from dl.google.com,
+using pinned 1.3.0 URLs from the [official ACP Registry](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json).
+All sibling runtime files are preserved. The cache is under
+`$DSH_HOME/cache/antigravity-acp`, or `~/.cache/dsh-antigravity-acp` outside DSH.
+Complete caches are reused; incomplete/corrupt downloads retry automatically.
+Downloads require ordinary HTTPS verification, reject redirects and validate ZIP
+paths/types/sizes. The Registry supplies no checksum; no vendor signature is
+invented. Google binaries are not bundled or redistributed. No postinstall script.
+
+OAuth uses only the official server's advertised oauth-personal method. The
+plugin never reads, copies or stores account credentials. Model discovery does
+not open a login browser in the background. Model/backend networking belongs to
+the official executable; the plugin uses no private Google model endpoints.
+
+## Optional settings
+
+Defaults need no changes. An advanced profile patch targets the existing row:
+
+```yaml
+- id: llm-antigravity-acp
+  config:
+    toolPolicy: bridge
+    timeoutMs: 600000
+    toolTimeoutMs: 900000
+```
+
+| Option                | Default         | Meaning                                                                      |
+| --------------------- | --------------- | ---------------------------------------------------------------------------- |
+| provider              | antigravity-acp | DSH provider route                                                           |
+| command               | empty           | Existing server discovery, then automatic download                           |
+| autoInstall           | true            | Provision Google's server when missing                                       |
+| installTimeoutMs      | 180000          | Download/extraction deadline                                                 |
+| args                  | []              | Extra argv; never interpreted as shell text                                  |
+| auth                  | oauth-personal  | Official authentication method                                               |
+| defaultModel          | empty           | Exact announced ID; empty uses server default                                |
+| models                | []              | Additional IDs, validated before use                                         |
+| toolPolicy            | bridge          | Automatic DSH MCP bridge; text-only omits tools; reject refuses tool schemas |
+| timeoutMs             | 600000          | Active model segment deadline, paused during tool execution                  |
+| toolTimeoutMs         | 900000          | Deadline waiting for DSH tool results/approval                               |
+| maxActiveToolSessions | 16              | Bounded concurrent unfinished tool turns                                     |
+| requestTimeoutMs      | 30000           | Protocol setup/config deadline                                               |
+| authTimeoutMs         | 600000          | Official browser authorization deadline                                      |
+| cancelGraceMs         | 1500            | Bound for sending ACP cancel                                                 |
+| disposeGraceMs        | 3000            | Managed process EOF grace                                                    |
+| maxSessionsPerProcess | 100             | Recycle the persistent text/discovery client between turns                   |
+
+Discovery order: command, AGY_ACP_BIN, PATH, known user directories, automatic
+installation. Explicit overrides are authoritative; broken paths fail clearly.
+Linux uses the Registry's uid launch flag. There is no account-selection UI.
+
+Optional diagnostics: `dsh-antigravity-acp status`, `doctor`, `probe`, `login`,
+`logout`. Status/doctor never initiate interactive login. Logout affects the
+server's shared account state and is never run automatically. The standalone CLI
+needs DSH's optional subprocess-local peer; plugin activation uses ctx.subprocess.
+
+## Remaining protocol limits
+
+- Text and reasoning stream. Binary image/audio input is not implemented. DSH
+  must project attachments for this text route; non-text tool-result blocks are
+  sent as JSON metadata, not dereferenced file bytes.
+- System instructions are serialized into ACP's user prompt. The official
+  agent's own system instructions remain; ACP is not a raw model API.
+- temperature, maxTokens, stop and explicit reasoningEffort fail with
+  UNSUPPORTED_OPTION. Choose an announced model variant for its reasoning tier.
+- usage_update measures context occupancy. Billable token counts and unknown
+  context capacity are not invented.
+- No durable ACP resume. Restart/provider change reconstructs from saved DSH
+  history. Partially streamed requests are never automatically replayed.
+- Limits: 256 active tool definitions, 128 KiB per definition, 1 MiB MCP bodies,
+  64 concurrent pending calls per turn. Unsupported schemas fail explicitly.
+
+## Troubleshooting
+
+| Code                           | Action                                                                     |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| ACP_INSTALL_FAILED             | Check connectivity/free disk space and retry                               |
+| ACP_AUTH_REQUIRED              | Complete the official browser authorization on first message               |
+| ACP_INVALID_MODEL              | Choose an exact ID announced by doctor/model picker                        |
+| ACP_MCP_UNSUPPORTED            | Use the supported official server with HTTP MCP capability                 |
+| ACP_NATIVE_TOOLS_UNSUPPORTED   | Retry using only the DSH bridge tools; native agent activity was cancelled |
+| ACP_TOOL_RESULTS_MISSING       | Retry from saved DSH history; a tool result was missing/duplicated         |
+| ACP_TOOL_TIMEOUT               | Finish approval/execution within the deadline, or increase toolTimeoutMs   |
+| ACP_TOOL_CATALOG_INVALID       | Correct the reported tool's JSON schema/name                               |
+| ACP_SESSION_LIMIT              | Finish/cancel an existing turn or raise maxActiveToolSessions              |
+| ACP_TIMEOUT / ACP_DISCONNECTED | Retry to reconnect; check server connectivity                              |
+| ACP_TEARDOWN_FAILED            | Restart the profile; managed cleanup could not be verified                 |
+| UNSUPPORTED_OPTION             | Remove unsupported sampling settings or project binary input               |
+
+Remote errors and stderr are drained without logging account/auth data. Local
+MCP bearer tokens are ephemeral, never logged and unrelated to OAuth credentials.
+
+## Verification
+
+```sh
+npm run check
+npm run format:check
 npm audit --omit=dev
 npm pack --dry-run
 node scripts/smoke-real.mjs
+node scripts/smoke-tools-real.mjs
 ```
 
-The opt-in real smoke consumes account quota. It mounts the actual Cordis plugin,
-lists the primary route through `ctx.llm`, checks streaming and DSH-owned multi-turn
-history, interrupts generation and verifies reconnection. It never runs on CI.
-CI uses a fake ACP subprocess for protocol and lifecycle regression tests.
-
-MIT. See [third-party notices](THIRD_PARTY_NOTICES.md).
+Real smokes are opt-in and consume account quota; they never run in CI. Fake
+servers cover transport, installer, streaming, lifecycle and tool continuations.
+The [verification record](docs/agy-acp-probe.md) distinguishes real installed DSH
+checks from protocol tests. MIT; [third-party notices](THIRD_PARTY_NOTICES.md).
+Independent community plugin, not affiliated with Google or DeepSeek.

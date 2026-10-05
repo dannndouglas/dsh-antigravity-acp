@@ -6,6 +6,7 @@ export declare class AntigravityAcpAdapter extends LlmAdapter {
     readonly config: Config;
     private warn;
     readonly client: AcpClient;
+    private tools;
     private tail;
     private disposed;
     private lifetime;
@@ -25,6 +26,7 @@ export declare class AntigravityAcpAdapter extends LlmAdapter {
         processStarts: number;
         authentications: number;
         generations: number;
+        activeToolSessions: number;
     };
     stream(options: GenerateOptions): AsyncIterable<StreamChunk>;
     dispose(): Promise<void>;
