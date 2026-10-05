@@ -18,13 +18,16 @@ jobs:
         with:
           node-version: '22.22.0'
           cache: npm
+      - name: Use the verified npm version
+        run: npm install --global npm@11.6.1
       - run: npm ci
         if: matrix.dsh == '0.2.0-rc.2'
       - name: Install the tested DSH host libraries
         if: matrix.dsh == '0.2.1-alpha.1'
         run: |
           npm pkg set "devDependencies.@deepseek-ai/cordis=4.0.5-alpha.1" "devDependencies.@deepseek-ai/dsh-app-boot=0.2.1-alpha.1" "devDependencies.@deepseek-ai/dsh-llm=0.2.1-alpha.1" "devDependencies.@deepseek-ai/dsh-subprocess=0.2.1-alpha.1" "devDependencies.@deepseek-ai/dsh-subprocess-local=0.2.1-alpha.1"
-          npm install --package-lock=false
+          node -e "require('node:fs').unlinkSync('package-lock.json')"
+          npm install
       - run: npm run check
       - run: npm run format:check
       - run: npm audit --omit=dev
