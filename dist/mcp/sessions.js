@@ -36,6 +36,7 @@ export class ToolSessions {
     bindings = new Map();
     closing = new Set();
     idleClients = new Map();
+    borrowedClients = new Set();
     counts = new WeakMap();
     disposed = false;
     processStarts = 0;
@@ -53,7 +54,11 @@ export class ToolSessions {
         return this.idleClients.size;
     }
     get connected() {
-        return [...this.idleClients.keys(), ...[...this.bindings.values()].map((b) => b.client)].some((client) => client.connected);
+        return [
+            ...this.idleClients.keys(),
+            ...this.borrowedClients,
+            ...[...this.bindings.values()].map((b) => b.client),
+        ].some((client) => client.connected);
     }
     account(client) {
         const previous = this.counts.get(client) ?? { starts: 0, auth: 0 };
@@ -66,15 +71,22 @@ export class ToolSessions {
         void cleanup.then(() => this.closing.delete(cleanup), () => this.closing.delete(cleanup));
         return cleanup;
     }
-    takeClient() {
+    borrowReadyClient() {
         for (const [client, timer] of this.idleClients) {
             this.idleClients.delete(client);
             clearTimeout(timer);
-            if (client.connected)
+            if (client.connected) {
+                this.borrowedClients.add(client);
                 return client;
+            }
             void this.track(client.dispose()).catch(() => { });
         }
-        return new AcpClient(this.config, this.runtime, this.notify);
+        return undefined;
+    }
+    takeClient() {
+        const client = this.borrowReadyClient() ?? new AcpClient(this.config, this.runtime, this.notify);
+        this.borrowedClients.delete(client); // An active Binding takes ownership synchronously.
+        return client;
     }
     async keepClient(client) {
         client.onUpdate = undefined;
@@ -92,9 +104,19 @@ export class ToolSessions {
     }
     async acceptReadyClient(client) {
         try {
-            await this.keepClient(client);
+            await this.track(this.keepClient(client));
         }
         finally {
+            this.borrowedClients.delete(client);
+            this.account(client);
+        }
+    }
+    async discardReadyClient(client) {
+        try {
+            await this.track(client.dispose());
+        }
+        finally {
+            this.borrowedClients.delete(client);
             this.account(client);
         }
     }
@@ -406,11 +428,13 @@ export class ToolSessions {
     }
     async dispose() {
         this.disposed = true;
-        const idle = [...this.idleClients].map(([client, timer]) => {
+        for (const timer of this.idleClients.values())
             clearTimeout(timer);
+        const idle = [...new Set([...this.idleClients.keys(), ...this.borrowedClients])].map((client) => {
             return client.dispose();
         });
         this.idleClients.clear();
+        this.borrowedClients.clear();
         await Promise.all([
             ...idle,
             ...this.closing,

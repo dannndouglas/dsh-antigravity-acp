@@ -11,6 +11,7 @@ import {
 import { fileURLToPath } from 'node:url';
 import { AntigravityAcpAdapter } from '../src/adapter.js';
 import { resolveConfig } from '../src/config.js';
+import { AcpClient } from '../src/acp/client.js';
 const live: AntigravityAcpAdapter[] = [],
   contexts: Context[] = [];
 const SessionId = (id: string) => id as GenerateOptions['sessionId'];
@@ -87,6 +88,68 @@ function answer(o: GenerateOptions, cs: StreamChunk[], isError = false): Generat
   };
 }
 describe('DSH tool round trips over ACP + MCP', () => {
+  it('uses discovery for a no-tools request without another process or session', async () => {
+    const { adapter, options, runtime } = fixture();
+    const spawn = vi.spyOn(runtime, 'spawn');
+    const requests = vi.spyOn(AcpClient.prototype, 'newSession');
+    try {
+      await adapter.listModels('antigravity-acp');
+      const result = await collect(adapter, { ...options, tools: [] });
+      expect(result.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } });
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(requests).toHaveBeenCalledTimes(1);
+      expect(adapter.diagnostics().processStarts).toBe(1);
+      // A completed session has model-owned history; only the unused discovery session is reused.
+      await collect(adapter, { ...options, tools: [] });
+      expect(requests).toHaveBeenCalledTimes(2);
+      const first = await collect(adapter, options);
+      await collect(adapter, answer(options, first));
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(adapter.diagnostics().processStarts).toBe(1);
+    } finally {
+      requests.mockRestore();
+    }
+  });
+  it('borrows an idle tool process for text without interrupting a pending tool exchange', async () => {
+    const { adapter, options, runtime } = fixture();
+    const spawn = vi.spyOn(runtime, 'spawn');
+    const parent = await collect(adapter, options);
+    await collect(adapter, { ...options, purpose: 'compaction', tools: [] });
+    await collect(adapter, { ...options, purpose: 'compaction', tools: [] });
+    const done = await collect(adapter, answer(options, parent));
+    expect(done.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } });
+    await collect(adapter, { ...options, tools: [] });
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(adapter.diagnostics().activeToolSessions).toBe(0);
+    expect(adapter.diagnostics().processStarts).toBe(2);
+  });
+  it('disposes a borrowed text process when the consumer stops early', async () => {
+    const { adapter, options, runtime } = fixture();
+    const spawn = vi.spyOn(runtime, 'spawn');
+    await adapter.listModels('antigravity-acp');
+    const stream = adapter.stream({ ...options, tools: [] })[Symbol.asyncIterator]();
+    let item = await stream.next();
+    while (item.value?.type !== 'text-delta') item = await stream.next();
+    await stream.return?.();
+    await spawn.mock.results[0]!.value.done;
+    expect(adapter.diagnostics().idleToolProcesses).toBe(0);
+    expect(adapter.diagnostics().connected).toBe(false);
+    await collect(adapter, { ...options, tools: [] });
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+  it('awaits borrowed text process teardown during provider disposal', async () => {
+    const { adapter, options, runtime } = fixture();
+    const spawn = vi.spyOn(runtime, 'spawn');
+    await adapter.listModels('antigravity-acp');
+    const stream = adapter.stream({ ...options, tools: [] })[Symbol.asyncIterator]();
+    let item = await stream.next();
+    while (item.value?.type !== 'text-delta') item = await stream.next();
+    await adapter.dispose();
+    await spawn.mock.results[0]!.value.done;
+    await stream.return?.();
+    expect(adapter.diagnostics().connected).toBe(false);
+    expect(adapter.diagnostics().idleToolProcesses).toBe(0);
+  });
   it('uses the model-discovery process for the first tool turn instead of starting another server', async () => {
     const { adapter, options, runtime } = fixture();
     const spawn = vi.spyOn(runtime, 'spawn');

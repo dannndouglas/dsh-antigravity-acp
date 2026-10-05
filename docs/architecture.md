@@ -52,7 +52,10 @@ No YOLO mode is enabled.
 
 ## History and lifecycle
 
-Each independent generation starts a fresh ACP session from complete DSH history.
+Each independent generation reconstructs its prompt from complete DSH history.
+It starts a fresh ACP session, except that the first request without tools can
+claim the still-empty discovery session once. This session has no MCP endpoint
+and has never received a prompt. Completed ACP sessions are never resumed.
 Only an unfinished tool exchange survives between DSH generations. Continuation
 checks the history prefix, provider/model/system/tool catalog and exact assistant
 call/result IDs. Missing or duplicate results fail explicitly. Changed context
@@ -71,8 +74,14 @@ Idle expiry, provider disposal, cancellation and errors dispose the affected
 processes; maxSessionsPerProcess still bounds each retained process's sessions.
 This isolates conversations and allows subagent tools to call the provider while
 the parent waits for their result. A bounded active-turn limit fails explicitly
-instead of queueing recursive calls indefinitely. Requests without tools use the
-persistent serialized client, recycled after maxSessionsPerProcess.
+instead of queueing recursive calls indefinitely. Requests without tools remain
+serialized and exclusively borrow a healthy idle process when available, otherwise
+using their persistent client. Borrowed processes remain owned by the provider
+until returned or discarded, so provider disposal also awaits their cleanup.
+They cannot borrow a process with a pending tool exchange. An unused discovery
+session can be claimed only while its process remains connected; creating another
+session, starting its prompt or resetting the process invalidates this claim.
+maxSessionsPerProcess still bounds session creation on all retained processes.
 
 timeoutMs bounds each active model segment. It pauses while DSH owns tool
 execution; toolTimeoutMs separately bounds waiting for results. Abort listeners

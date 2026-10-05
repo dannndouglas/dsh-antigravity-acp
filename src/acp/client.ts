@@ -27,6 +27,7 @@ export class AcpClient {
   private cwd?: string;
   private stopping?: Promise<void>;
   private sessionCount = 0;
+  private unusedSession?: NewSessionResponse;
   private disposed = false;
   initializeResult?: InitializeResponse;
   processStarts = 0;
@@ -115,7 +116,7 @@ export class AcpClient {
       const init = await this.bounded(
         connection.agent.request(methods.agent.initialize, {
           protocolVersion: 1,
-          clientInfo: { name: 'dsh-antigravity-acp', version: '0.3.2' },
+          clientInfo: { name: 'dsh-antigravity-acp', version: '0.3.3' },
           clientCapabilities: {
             fs: { readTextFile: false, writeTextFile: false },
             terminal: false,
@@ -157,6 +158,7 @@ export class AcpClient {
     authenticate = true,
     mcpServers: McpServer[] = [],
   ): Promise<NewSessionResponse> {
+    this.unusedSession = undefined;
     // ACP has no universal session disposal; periodically recycle between turns.
     if (this.sessionCount >= this.config.maxSessionsPerProcess) await this.reset();
     await this.start(signal);
@@ -179,6 +181,14 @@ export class AcpClient {
       session = await create();
     }
     this.sessionCount++;
+    if (!mcpServers.length) this.unusedSession = session;
+    return session;
+  }
+
+  /** Claim a still-empty discovery session once. Sessions with MCP or prior prompts are excluded. */
+  takeUnusedSession(): NewSessionResponse | undefined {
+    const session = this.connected ? this.unusedSession : undefined;
+    this.unusedSession = undefined;
     return session;
   }
 
@@ -214,6 +224,7 @@ export class AcpClient {
     signal?: AbortSignal,
     timeoutMs = this.config.timeoutMs,
   ): Promise<PromptResponse> {
+    if (this.unusedSession?.sessionId === sessionId) this.unusedSession = undefined;
     return this.bounded(
       this.connection!.agent.request(methods.agent.session.prompt, {
         sessionId,
@@ -262,6 +273,7 @@ export class AcpClient {
     this.child = undefined;
     this.connection = undefined;
     this.initializeResult = undefined;
+    this.unusedSession = undefined;
     this.sessionCount = 0;
     this.stopping = (async () => {
       connection?.close();

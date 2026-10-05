@@ -135,6 +135,8 @@ export class AntigravityAcpAdapter extends LlmAdapter {
         }
         const prompt = buildPrompt(options, this.config); // Validate before spawning or authenticating.
         const release = await this.acquire(options.signal);
+        const borrowed = this.tools.borrowReadyClient();
+        const client = borrowed ?? this.client;
         const mapper = new EventMapper();
         let sessionId, completed = false, promptStarted = false;
         const queue = [];
@@ -146,18 +148,18 @@ export class AntigravityAcpAdapter extends LlmAdapter {
                 this.warnedTools = true;
                 this.warn('Antigravity ACP is a text-only route: DSH tool schemas are omitted and tool execution is unavailable (toolPolicy: text-only).');
             }
-            const session = await this.client.newSession(options.signal);
+            const session = client.takeUnusedSession() ?? (await client.newSession(options.signal));
             sessionId = session.sessionId;
             this.catalog = modelCatalog(session);
-            await this.client.selectModel(session, options.model, options.signal);
+            await client.selectModel(session, options.model, options.signal);
             this.generations++;
             const nativeTools = () => {
                 error = new LlmError('Antigravity attempted native agent tool activity. This provider supports text only; tools remain unavailable on this route.', 'ACP_NATIVE_TOOLS_UNSUPPORTED');
                 done = true;
                 wake?.();
             };
-            this.client.onPermission = nativeTools;
-            this.client.onUpdate = (event) => {
+            client.onPermission = nativeTools;
+            client.onUpdate = (event) => {
                 if (event.sessionId !== sessionId || done)
                     return;
                 if (event.update.sessionUpdate === 'tool_call' ||
@@ -170,7 +172,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
             };
             let stop = '';
             promptStarted = true;
-            const pending = this.client.prompt(sessionId, prompt, options.signal).then((result) => {
+            const pending = client.prompt(sessionId, prompt, options.signal).then((result) => {
                 stop = result.stopReason;
                 done = true;
                 wake?.();
@@ -199,21 +201,29 @@ export class AntigravityAcpAdapter extends LlmAdapter {
                 throw new LlmError('Official ACP server ended the turn without assistant text.', 'EMPTY_RESPONSE');
             yield* mapper.end();
             // ACP usage_update reports current context occupancy, not per-call token billing.
-            completed = true;
+            completed = stop === 'end_turn';
             yield { type: 'finish', reason: finishReason(stop) };
         }
         catch (failure) {
             throw options.signal?.aborted ? aborted() : classify(failure);
         }
         finally {
-            this.client.onUpdate = undefined;
-            this.client.onPermission = undefined;
+            client.onUpdate = undefined;
+            client.onPermission = undefined;
             try {
-                if (!completed)
-                    await this.client.cancelAndReset(promptStarted ? sessionId : undefined);
+                if (completed && !options.signal?.aborted && borrowed)
+                    await this.tools.acceptReadyClient(client);
+                else if (!completed || options.signal?.aborted)
+                    await client.cancelAndReset(promptStarted ? sessionId : undefined);
             }
             finally {
-                release();
+                try {
+                    if (borrowed && (!completed || options.signal?.aborted))
+                        await this.tools.discardReadyClient(client);
+                }
+                finally {
+                    release();
+                }
             }
         }
     }

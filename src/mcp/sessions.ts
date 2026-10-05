@@ -76,6 +76,7 @@ export class ToolSessions {
   private bindings = new Map<string, Binding>();
   private closing = new Set<Promise<void>>();
   private idleClients = new Map<AcpClient, ReturnType<typeof setTimeout>>();
+  private borrowedClients = new Set<AcpClient>();
   private counts = new WeakMap<AcpClient, { starts: number; auth: number }>();
   private disposed = false;
   processStarts = 0;
@@ -93,9 +94,11 @@ export class ToolSessions {
     return this.idleClients.size;
   }
   get connected(): boolean {
-    return [...this.idleClients.keys(), ...[...this.bindings.values()].map((b) => b.client)].some(
-      (client) => client.connected,
-    );
+    return [
+      ...this.idleClients.keys(),
+      ...this.borrowedClients,
+      ...[...this.bindings.values()].map((b) => b.client),
+    ].some((client) => client.connected);
   }
   private account(client: AcpClient): void {
     const previous = this.counts.get(client) ?? { starts: 0, auth: 0 };
@@ -111,14 +114,23 @@ export class ToolSessions {
     );
     return cleanup;
   }
-  private takeClient(): AcpClient {
+  borrowReadyClient(): AcpClient | undefined {
     for (const [client, timer] of this.idleClients) {
       this.idleClients.delete(client);
       clearTimeout(timer);
-      if (client.connected) return client;
+      if (client.connected) {
+        this.borrowedClients.add(client);
+        return client;
+      }
       void this.track(client.dispose()).catch(() => {});
     }
-    return new AcpClient(this.config, this.runtime, this.notify);
+    return undefined;
+  }
+  private takeClient(): AcpClient {
+    const client =
+      this.borrowReadyClient() ?? new AcpClient(this.config, this.runtime, this.notify);
+    this.borrowedClients.delete(client); // An active Binding takes ownership synchronously.
+    return client;
   }
   private async keepClient(client: AcpClient): Promise<void> {
     client.onUpdate = undefined;
@@ -136,8 +148,17 @@ export class ToolSessions {
   }
   async acceptReadyClient(client: AcpClient): Promise<void> {
     try {
-      await this.keepClient(client);
+      await this.track(this.keepClient(client));
     } finally {
+      this.borrowedClients.delete(client);
+      this.account(client);
+    }
+  }
+  async discardReadyClient(client: AcpClient): Promise<void> {
+    try {
+      await this.track(client.dispose());
+    } finally {
+      this.borrowedClients.delete(client);
       this.account(client);
     }
   }
@@ -461,11 +482,14 @@ export class ToolSessions {
   }
   async dispose(): Promise<void> {
     this.disposed = true;
-    const idle = [...this.idleClients].map(([client, timer]) => {
-      clearTimeout(timer);
-      return client.dispose();
-    });
+    for (const timer of this.idleClients.values()) clearTimeout(timer);
+    const idle = [...new Set([...this.idleClients.keys(), ...this.borrowedClients])].map(
+      (client) => {
+        return client.dispose();
+      },
+    );
     this.idleClients.clear();
+    this.borrowedClients.clear();
     await Promise.all([
       ...idle,
       ...this.closing,

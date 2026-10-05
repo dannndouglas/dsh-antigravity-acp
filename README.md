@@ -34,8 +34,12 @@ For a terminal installation:
 dsh plugin --profile web add git+https://github.com/dannndouglas/dsh-antigravity-acp.git
 ```
 
-Open the profile and send a message. A running profile may need its ordinary
-reload. The package bundle mounts the provider and default model. Explicit saved
+Open the profile and send a message. After installing or updating in DSH Desktop,
+fully quit DSH and reopen it: an open host can retain the previous plugin module
+even when the installed package already shows the new version. To update when
+there is no update button, remove the plugin and install the same repository URL
+again, then fully quit and reopen DSH. No configuration changes are needed.
+The package bundle mounts the provider and default model. Explicit saved
 profile/session selections retain DSH's normal precedence. You can choose any
 announced model in the ordinary model picker.
 
@@ -47,7 +51,7 @@ installation. Development checkout:
 npm ci
 npm run check
 npm pack
-dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.2.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.3.tgz
 ```
 
 ## How tools work
@@ -76,13 +80,17 @@ The official executable is an agent, so these protocol guardrails **are not an
 OS sandbox** and cannot undo a native action performed before its notification.
 
 DSH remains the history authority. Independent turns start from full DSH context.
-Version 0.3.2 reuses a ready server process and the model-discovery process.
-Each new turn still receives a fresh ACP session and its own MCP bridge.
+Version 0.3.3 also lets requests without tools borrow a ready server process.
+The first such request can claim the still-empty model-discovery session once,
+avoiding redundant process startup and session creation. Later independent turns
+receive fresh ACP sessions; tool turns always receive their own MCP bridge.
 At most two completed processes stay ready for five minutes, then shut down.
 Cancellation, errors and early stream termination discard the affected process.
-This is automatic; no extra setup is required. Minimal real Flash Low tests
-reduced time to first text from about 21 seconds to 10–11 seconds after discovery;
-cold startup and Google's remaining setup/generation time can still take longer.
+This is automatic; no extra setup is required. Two real Flash Low samples per
+version measured 18–21 seconds to first text in 0.3.2 versus 8.7–9.2 seconds in
+the 0.3.3 candidate for the first request without tools after discovery. These
+small samples are not a latency guarantee. Cold startup, fresh sessions, model
+selection and Google's generation time can still take longer.
 See the [timing record](docs/performance.md).
 
 Only an unfinished tool round trip retains ACP state. Context/model/catalog
@@ -132,7 +140,7 @@ Defaults need no changes. An advanced profile patch targets the existing row:
 | timeoutMs             | 600000          | Active model segment deadline, paused during tool execution                  |
 | toolTimeoutMs         | 900000          | Deadline waiting for DSH tool results/approval                               |
 | maxActiveToolSessions | 16              | Bounded concurrent unfinished tool turns                                     |
-| idleProcessTimeoutMs  | 300000          | Keep up to two completed server processes ready between turns                 |
+| idleProcessTimeoutMs  | 300000          | Keep up to two completed server processes ready between turns                |
 | requestTimeoutMs      | 30000           | Protocol setup/config deadline                                               |
 | authTimeoutMs         | 600000          | Official browser authorization deadline                                      |
 | cancelGraceMs         | 1500            | Bound for sending ACP cancel                                                 |

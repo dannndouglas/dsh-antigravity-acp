@@ -21,16 +21,25 @@ Se preferir instalar pelo terminal:
 dsh plugin --profile web add git+https://github.com/dannndouglas/dsh-antigravity-acp.git
 ```
 
-A versão **0.3.2** reduz a espera ao reaproveitar o processo usado pelo seletor
-de modelos e manter até dois processos prontos entre turnos, por cinco minutos.
-Cada turno recebe uma sessão ACP nova com o histórico atual do DSH. Nos testes
-com Gemini 3.8 Flash Low, o primeiro texto passou de aproximadamente 21 segundos
-para 10–11 segundos após a descoberta dos modelos. Inicialização a frio e o
-tempo restante do servidor Google ainda variam. Não há configuração adicional.
+A versão **0.3.3** também aproveita os processos prontos nos pedidos sem
+ferramentas. O primeiro desses pedidos pode usar a sessão ainda vazia criada pelo
+seletor de modelos, evitando abrir outro processo e criar outra sessão. Até dois
+processos ficam prontos por cinco minutos. Os turnos seguintes recebem sessões
+ACP novas com o histórico atual do DSH; cada turno com ferramentas recebe sua
+própria ponte MCP. Não há configuração adicional.
+
+Na comparação local com Gemini 3.8 Flash Low, dois pedidos por versão levaram
+18–21 segundos até o primeiro texto na 0.3.2 e 8,7–9,2 segundos na candidata
+0.3.3, após a descoberta dos modelos e sem ferramentas. São poucas amostras,
+não uma garantia de tempo. Inicialização a frio, criação de novas sessões,
+seleção do modelo e geração no servidor Google ainda têm custo variável.
 Veja as [medições e seus limites](performance.md).
 
-Abra o perfil e envie uma mensagem. Se ele já estiver aberto, use seu
-recarregamento normal. Não precisa baixar binários, definir variáveis, editar
+Abra o perfil e envie uma mensagem. Após instalar ou atualizar no DSH Desktop,
+encerre o DSH completamente e abra de novo. O aplicativo aberto pode manter o
+módulo anterior em memória, mesmo que a instalação já mostre a versão nova.
+Se não houver botão de atualizar, remova o plugin, instale novamente pela mesma
+URL do repositório e encerre e reabra o DSH. Não precisa baixar binários, definir variáveis, editar
 arquivos ou executar login pelo terminal. Antigravity é o padrão dos chats novos,
 respeitando escolhas explícitas já salvas no perfil ou na sessão.
 

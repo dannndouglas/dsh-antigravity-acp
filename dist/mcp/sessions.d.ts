@@ -12,6 +12,7 @@ export declare class ToolSessions {
     private bindings;
     private closing;
     private idleClients;
+    private borrowedClients;
     private counts;
     private disposed;
     processStarts: number;
@@ -23,9 +24,11 @@ export declare class ToolSessions {
     get connected(): boolean;
     private account;
     private track;
+    borrowReadyClient(): AcpClient | undefined;
     private takeClient;
     private keepClient;
     acceptReadyClient(client: AcpClient): Promise<void>;
+    discardReadyClient(client: AcpClient): Promise<void>;
     private find;
     has(o: GenerateOptions): boolean;
     private deadline;

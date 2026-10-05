@@ -11,6 +11,7 @@ export declare class AcpClient {
     private cwd?;
     private stopping?;
     private sessionCount;
+    private unusedSession?;
     private disposed;
     initializeResult?: InitializeResponse;
     processStarts: number;
@@ -23,6 +24,8 @@ export declare class AcpClient {
     start(signal?: AbortSignal): Promise<void>;
     login(signal?: AbortSignal): Promise<void>;
     newSession(signal?: AbortSignal, authenticate?: boolean, mcpServers?: McpServer[]): Promise<NewSessionResponse>;
+    /** Claim a still-empty discovery session once. Sessions with MCP or prior prompts are excluded. */
+    takeUnusedSession(): NewSessionResponse | undefined;
     selectModel(session: NewSessionResponse, model: string, signal?: AbortSignal): Promise<void>;
     prompt(sessionId: string, text: string, signal?: AbortSignal, timeoutMs?: number): Promise<PromptResponse>;
     logout(signal?: AbortSignal): Promise<void>;

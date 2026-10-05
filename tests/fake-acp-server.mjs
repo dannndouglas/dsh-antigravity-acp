@@ -103,7 +103,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       });
       return;
     }
-    if (variant.startsWith('bridge')) {
+    if (variant.startsWith('bridge') && bridges.get(sid)?.length) {
       const descriptor = bridges.get(sid)[0];
       const mcp = new Client({ name: 'fake-acp', version: '1' });
       await mcp.connect(

@@ -17,6 +17,7 @@ export class AcpClient {
     cwd;
     stopping;
     sessionCount = 0;
+    unusedSession;
     disposed = false;
     initializeResult;
     processStarts = 0;
@@ -91,7 +92,7 @@ export class AcpClient {
             void child.done.then(() => connection.close(), () => connection.close());
             const init = await this.bounded(connection.agent.request(methods.agent.initialize, {
                 protocolVersion: 1,
-                clientInfo: { name: 'dsh-antigravity-acp', version: '0.3.2' },
+                clientInfo: { name: 'dsh-antigravity-acp', version: '0.3.3' },
                 clientCapabilities: {
                     fs: { readTextFile: false, writeTextFile: false },
                     terminal: false,
@@ -116,6 +117,7 @@ export class AcpClient {
         this.authentications++;
     }
     async newSession(signal, authenticate = true, mcpServers = []) {
+        this.unusedSession = undefined;
         // ACP has no universal session disposal; periodically recycle between turns.
         if (this.sessionCount >= this.config.maxSessionsPerProcess)
             await this.reset();
@@ -135,6 +137,14 @@ export class AcpClient {
             session = await create();
         }
         this.sessionCount++;
+        if (!mcpServers.length)
+            this.unusedSession = session;
+        return session;
+    }
+    /** Claim a still-empty discovery session once. Sessions with MCP or prior prompts are excluded. */
+    takeUnusedSession() {
+        const session = this.connected ? this.unusedSession : undefined;
+        this.unusedSession = undefined;
         return session;
     }
     async selectModel(session, model, signal) {
@@ -153,6 +163,8 @@ export class AcpClient {
         }), this.config.requestTimeoutMs, signal);
     }
     prompt(sessionId, text, signal, timeoutMs = this.config.timeoutMs) {
+        if (this.unusedSession?.sessionId === sessionId)
+            this.unusedSession = undefined;
         return this.bounded(this.connection.agent.request(methods.agent.session.prompt, {
             sessionId,
             prompt: [{ type: 'text', text }],
@@ -186,6 +198,7 @@ export class AcpClient {
         this.child = undefined;
         this.connection = undefined;
         this.initializeResult = undefined;
+        this.unusedSession = undefined;
         this.sessionCount = 0;
         this.stopping = (async () => {
             connection?.close();
