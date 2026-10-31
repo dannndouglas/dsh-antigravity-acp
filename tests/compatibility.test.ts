@@ -5,14 +5,14 @@ import { describe, expect, it } from 'vitest';
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 describe('DSH installation compatibility', () => {
-  it.each(['0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-rc.2', '0.2.1-rc.3'])(
+  it.each(['0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.5'])(
     'passes the official installer preflight on DSH %s without an exemption',
     (runtimeVersion) => {
       expect(evaluatePluginCompatibility(manifest, {}, runtimeVersion)).toBeUndefined();
     },
   );
 
-  it.each(['0.1.7-rc.2', '0.3.0'])(
+  it.each(['0.1.7-rc.2', '0.2.1-rc.6', '0.3.0'])(
     'refuses unverified DSH %s instead of disabling version checks',
     (runtimeVersion) => {
       const issue = evaluatePluginCompatibility(manifest, {}, runtimeVersion);

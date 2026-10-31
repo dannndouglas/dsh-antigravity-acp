@@ -116,7 +116,7 @@ export class AcpClient {
       const init = await this.bounded(
         connection.agent.request(methods.agent.initialize, {
           protocolVersion: 1,
-          clientInfo: { name: 'dsh-antigravity-acp', version: '0.3.3' },
+          clientInfo: { name: 'dsh-antigravity-acp', version: '0.3.4' },
           clientCapabilities: {
             fs: { readTextFile: false, writeTextFile: false },
             terminal: false,

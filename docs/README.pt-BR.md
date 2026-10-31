@@ -8,8 +8,9 @@ de modelos do Antigravity.
 ## Instalação
 
 Use Node.js >=22.19 e DSH **0.2.0-rc.2**, **0.2.1-alpha.1**, **0.2.1-rc.2** ou
-**0.2.1-rc.3**. O plugin usa os serviços fornecidos pelo próprio DSH. Não é
-necessário aceitar exceções de versão ou alterar configurações.
+**0.2.1-rc.3** ou **0.2.1-rc.5**. A versão **0.3.4** adiciona compatibilidade
+com o rc.5. O plugin usa os serviços fornecidos pelo próprio DSH. Não é necessário
+aceitar exceções de versão ou alterar configurações.
 
 O nível de raciocínio é escolhido pelo ID exato do modelo, como o sufixo `-low`.
 O seletor separado de esforço do DSH é aceito por compatibilidade e não altera

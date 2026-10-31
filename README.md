@@ -19,8 +19,9 @@ commands and installed extension tools use this same DSH execution path.
 ## Install
 
 Requires Node.js **>=22.19**. Supports DSH **0.2.0-rc.2**, **0.2.1-alpha.1**,
-**0.2.1-rc.2** and **0.2.1-rc.3**. The package uses the host's matching services;
-no version exemption is needed.
+**0.2.1-rc.2**, **0.2.1-rc.3** and **0.2.1-rc.5**. Version **0.3.4** adds rc.5
+compatibility. The package uses the host's matching services; no version exemption
+is needed.
 The thinking tier is selected by the exact model ID (for example, a `-low`
 suffix). The host's separate reasoning-effort selector is accepted for
 compatibility and does not override that model selection.
@@ -55,7 +56,7 @@ installation. Development checkout:
 npm ci
 npm run check
 npm pack
-dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.3.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.4.tgz
 ```
 
 ## How tools work
