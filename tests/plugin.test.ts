@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { Context } from '@deepseek-ai/cordis';
-import { LlmRuntime } from '@deepseek-ai/dsh-llm';
+import { LlmRuntime, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local';
 import { fileURLToPath } from 'node:url';
 import * as plugin from '../src/index.js';
@@ -10,6 +10,45 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { distribution } from '../src/acp/installer.js';
 import { zipFixture } from './zip-fixture.js';
+import { AcpClient } from '../src/acp/client.js';
+it.each(['off', 'low', 'medium', 'high', 'max'])(
+  'accepts host reasoning effort %s while keeping the exact ACP model ID',
+  async (effort) => {
+    const ctx = new Context();
+    const selectModel = vi.spyOn(AcpClient.prototype, 'selectModel');
+    try {
+      await ctx.plugin(LlmRuntime);
+      await ctx.plugin(LocalSubprocessRuntime);
+      await ctx.plugin(
+        plugin,
+        resolveConfig({
+          command: process.execPath,
+          args: [fileURLToPath(new URL('./fake-acp-server.mjs', import.meta.url))],
+        }),
+      );
+      await ctx.llm.listModels('antigravity-acp');
+      const chunks = [];
+      for await (const chunk of ctx.llm.stream({
+        provider: 'antigravity-acp',
+        model: 'fake-model',
+        reasoningEffort: ReasoningEffortId(effort),
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+      }))
+        chunks.push(chunk);
+      expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } });
+      expect(
+        chunks
+          .filter((chunk) => chunk.type === 'text-delta')
+          .map((chunk) => chunk.text)
+          .join(''),
+      ).toBe('Olá world');
+      expect(selectModel.mock.calls.map((call) => call[1])).toEqual(['fake-model']);
+    } finally {
+      selectModel.mockRestore();
+      await ctx.fiber.dispose();
+    }
+  },
+);
 it('mounts through Cordis, discovers the primary model route, streams through ctx.llm and unregisters on disposal', async () => {
   const ctx = new Context();
   try {

@@ -1,7 +1,9 @@
 import { LlmError } from '@deepseek-ai/dsh-llm';
 import { mcpToolName } from './mcp/bridge.js';
 export function buildPrompt(options, config) {
-    for (const key of ['temperature', 'maxTokens', 'reasoningEffort']) {
+    // Host reasoning metadata accepts the request field; ACP's exact model ID
+    // selects the thinking tier, so reasoningEffort is intentionally not forwarded.
+    for (const key of ['temperature', 'maxTokens']) {
         if (options[key] !== undefined)
             throw new LlmError(`ACP does not expose ${key}. Remove that request option; select an exact model ID for its reasoning tier.`, 'UNSUPPORTED_OPTION');
     }

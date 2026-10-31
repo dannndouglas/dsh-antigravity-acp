@@ -54,15 +54,15 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "1.4.0",
     "@deepseek-ai/schemastery": "3.18.4",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "ajv": "8.20.0",
     "yauzl": "3.4.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4 || 4.0.5-alpha.1",
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2 || 0.2.1-alpha.1 || 0.2.1-rc.3",
-    "@deepseek-ai/dsh-subprocess": "0.2.0-rc.2 || 0.2.1-alpha.1 || 0.2.1-rc.3",
-    "@deepseek-ai/dsh-subprocess-local": "0.2.0-rc.2 || 0.2.1-alpha.1 || 0.2.1-rc.3"
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2 || 0.2.1-alpha.1 || 0.2.1-rc.2 || 0.2.1-rc.3",
+    "@deepseek-ai/dsh-subprocess": "0.2.0-rc.2 || 0.2.1-alpha.1 || 0.2.1-rc.2 || 0.2.1-rc.3",
+    "@deepseek-ai/dsh-subprocess-local": "0.2.0-rc.2 || 0.2.1-alpha.1 || 0.2.1-rc.2 || 0.2.1-rc.3"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-subprocess-local": {

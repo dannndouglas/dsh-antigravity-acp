@@ -41,6 +41,19 @@ afterEach(async () => {
   await Promise.all(contexts.splice(0).map((c) => c.fiber.dispose()));
 });
 describe('official ACP provider contract (fake server)', () => {
+  it('declares reasoning metadata for discovered, configured and fallback model resolution', async () => {
+    const a = adapter('normal', { models: ['configured-model'] });
+    const expected = ['off', 'low', 'medium', 'high', 'max'];
+    const models = await a.listModels('antigravity-acp');
+    expect(models.map((model) => model.id)).toContain('configured-model');
+    for (const model of [...models, await a.resolveModel('antigravity-acp', 'server-default')]) {
+      expect(model).toMatchObject({
+        reasoning: {
+          efforts: expected.map((id) => ({ id, name: id[0]!.toUpperCase() + id.slice(1) })),
+        },
+      });
+    }
+  });
   it('discovers server model IDs and registers text-only metadata', async () => {
     const a = adapter();
     expect(await a.listModels('antigravity-acp')).toEqual(
