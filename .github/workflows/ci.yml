@@ -10,7 +10,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        dsh: ['0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-rc.2', '0.2.1-rc.3']
+        dsh: ['0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.5']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
           node -e "require('node:fs').unlinkSync('package-lock.json')"
           npm install
       - name: Install the release-candidate DSH host libraries
-        if: matrix.dsh == '0.2.1-rc.2' || matrix.dsh == '0.2.1-rc.3'
+        if: matrix.dsh == '0.2.1-rc.2' || matrix.dsh == '0.2.1-rc.3' || matrix.dsh == '0.2.1-rc.5'
         run: |
           npm pkg set "devDependencies.@deepseek-ai/cordis=4.0.5" "devDependencies.@deepseek-ai/dsh-app-boot=${{ matrix.dsh }}" "devDependencies.@deepseek-ai/dsh-llm=${{ matrix.dsh }}" "devDependencies.@deepseek-ai/dsh-subprocess=${{ matrix.dsh }}" "devDependencies.@deepseek-ai/dsh-subprocess-local=${{ matrix.dsh }}"
           node -e "require('node:fs').unlinkSync('package-lock.json')"
