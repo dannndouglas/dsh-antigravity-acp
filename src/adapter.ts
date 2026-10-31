@@ -1,6 +1,7 @@
 import {
   LlmAdapter,
   LlmError,
+  ReasoningEffortId,
   type GenerateOptions,
   type StreamChunk,
   type LlmModelInfo,
@@ -14,6 +15,27 @@ import { modelCatalog } from './models.js';
 import { buildPrompt } from './prompt.js';
 import type { Config } from './config.js';
 import { ToolSessions } from './mcp/sessions.js';
+
+/**
+ * DSH 0.2.1-rc.3 requires every model entry to declare reasoning metadata
+ * before a request carrying a `reasoningEffort` is accepted; without it the
+ * host throws UNSUPPORTED_REASONING_EFFORT for any effort, including `off`.
+ *
+ * Antigravity encodes the thinking level into the model ID suffix
+ * (`-low` / `-medium` / `-high`) and this adapter never consumes
+ * `options.reasoningEffort`, so a full host-neutral effort list is declared
+ * purely to satisfy the host contract. See
+ * https://github.com/dannndouglas/dsh-antigravity-acp/issues/1
+ */
+const REASONING_META = {
+  efforts: [
+    { id: ReasoningEffortId('off'), name: 'Off' },
+    { id: ReasoningEffortId('low'), name: 'Low' },
+    { id: ReasoningEffortId('medium'), name: 'Medium' },
+    { id: ReasoningEffortId('high'), name: 'High' },
+    { id: ReasoningEffortId('max'), name: 'Max' },
+  ],
+};
 
 export class AntigravityAcpAdapter extends LlmAdapter {
   private controlClient: AcpClient;
@@ -102,6 +124,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
         provider,
         inputModalities: ['text'],
         description: 'Official ACP backend with DSH tools through MCP',
+        reasoning: REASONING_META,
       }));
     } finally {
       release();
@@ -118,6 +141,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
       id: model,
       name: this.catalog.find((m) => m.id === model)?.name ?? model,
       inputModalities: ['text'],
+      reasoning: REASONING_META,
     };
   }
   diagnostics() {

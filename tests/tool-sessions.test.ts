@@ -4,6 +4,7 @@ import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local';
 import {
   createAssistantMessage,
   createToolResultMessage,
+  ReasoningEffortId,
   type GenerateOptions,
   type StreamChunk,
   type ToolCallBlock,
@@ -88,6 +89,24 @@ function answer(o: GenerateOptions, cs: StreamChunk[], isError = false): Generat
   };
 }
 describe('DSH tool round trips over ACP + MCP', () => {
+  it.each(['off', 'medium'])(
+    'preserves a tool round trip with host reasoning effort %s',
+    async (effort) => {
+      const { adapter, options } = fixture();
+      const request = { ...options, reasoningEffort: ReasoningEffortId(effort) };
+      const first = await collect(adapter, request);
+      expect(first.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'tool-calls' } });
+      expect(calls(first)).toHaveLength(1);
+      const done = await collect(adapter, answer(request, first));
+      expect(done.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } });
+      expect(
+        done
+          .filter((chunk) => chunk.type === 'text-delta')
+          .map((chunk) => chunk.text)
+          .join(''),
+      ).toContain('CONTENT_x');
+    },
+  );
   it('uses discovery for a no-tools request without another process or session', async () => {
     const { adapter, options, runtime } = fixture();
     const spawn = vi.spyOn(runtime, 'spawn');
