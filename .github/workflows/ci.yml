@@ -26,6 +26,7 @@ jobs:
         if: matrix.dsh == '0.2.0-rc.2'
         run: |
           npm pkg set "devDependencies.@deepseek-ai/cordis=4.0.4" "devDependencies.@deepseek-ai/dsh-app-boot=${{ matrix.dsh }}" "devDependencies.@deepseek-ai/dsh-llm=${{ matrix.dsh }}" "devDependencies.@deepseek-ai/dsh-subprocess=${{ matrix.dsh }}" "devDependencies.@deepseek-ai/dsh-subprocess-local=${{ matrix.dsh }}"
+          npm pkg set "devDependencies.@deepseek-ai/cordis-plugin-group=1.0.4" "devDependencies.@deepseek-ai/cordis-plugin-loader=1.0.5" "devDependencies.@deepseek-ai/cordis-plugin-include=1.0.9"
           node -e "require('node:fs').unlinkSync('package-lock.json')"
           npm install
       - name: Install the tested DSH host libraries
