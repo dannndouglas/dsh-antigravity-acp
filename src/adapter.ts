@@ -2,7 +2,6 @@ import {
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
-  type GenerateOptions,
   type StreamChunk,
   type LlmModelInfo,
   type LlmResolvedModelInfo,
@@ -15,6 +14,7 @@ import { modelCatalog } from './models.js';
 import { buildPrompt } from './prompt.js';
 import type { Config } from './config.js';
 import { ToolSessions } from './mcp/sessions.js';
+import type { AcpGenerateOptions as GenerateOptions } from './request.js';
 
 /**
  * DSH 0.2.1-rc.3 requires every model entry to declare reasoning metadata

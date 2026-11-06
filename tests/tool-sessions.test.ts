@@ -5,7 +5,6 @@ import {
   createAssistantMessage,
   createToolResultMessage,
   ReasoningEffortId,
-  type GenerateOptions,
   type StreamChunk,
   type ToolCallBlock,
 } from '@deepseek-ai/dsh-llm';
@@ -13,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { AntigravityAcpAdapter } from '../src/adapter.js';
 import { resolveConfig } from '../src/config.js';
 import { AcpClient } from '../src/acp/client.js';
+import type { AcpGenerateOptions as GenerateOptions } from '../src/request.js';
 const live: AntigravityAcpAdapter[] = [],
   contexts: Context[] = [];
 const SessionId = (id: string) => id as GenerateOptions['sessionId'];

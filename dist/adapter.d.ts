@@ -1,7 +1,8 @@
-import { LlmAdapter, type GenerateOptions, type StreamChunk, type LlmModelInfo, type LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm';
+import { LlmAdapter, type StreamChunk, type LlmModelInfo, type LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm';
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess';
 import { AcpClient } from './acp/client.js';
 import type { Config } from './config.js';
+import type { AcpGenerateOptions as GenerateOptions } from './request.js';
 export declare class AntigravityAcpAdapter extends LlmAdapter {
     readonly config: Config;
     private runtime;

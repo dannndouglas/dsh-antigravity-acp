@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
   LlmError,
-  type GenerateOptions,
   type StreamChunk,
   type ToolCallBlock,
   type RequestMessage,
@@ -14,6 +13,7 @@ import { aborted, classify } from '../acp/errors.js';
 import { buildPrompt } from '../prompt.js';
 import type { Config } from '../config.js';
 import { DshMcpBridge } from './bridge.js';
+import type { AcpGenerateOptions as GenerateOptions } from '../request.js';
 
 interface Pending {
   call: ToolCallBlock;

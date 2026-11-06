@@ -1,7 +1,8 @@
-import { type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm';
+import { type StreamChunk } from '@deepseek-ai/dsh-llm';
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess';
 import { AcpClient } from '../acp/client.js';
 import type { Config } from '../config.js';
+import type { AcpGenerateOptions as GenerateOptions } from '../request.js';
 /** Active turns own separate ACP processes, avoiding subagent deadlocks.
  * Completed processes can stay ready; every independent turn gets a fresh ACP session.
  */
