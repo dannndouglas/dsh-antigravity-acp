@@ -18,6 +18,10 @@ export interface Config {
   cancelGraceMs: number;
   disposeGraceMs: number;
   maxSessionsPerProcess: number;
+  maxPromptBytes: number;
+  ignoreUnsupportedOptions: boolean;
+  contextWindow: number;
+  contextWindows: Record<string, number>;
 }
 export const Config: z<Config> = z.object({
   provider: z.string().default('antigravity-acp'),
@@ -38,6 +42,10 @@ export const Config: z<Config> = z.object({
   cancelGraceMs: z.natural().default(1500),
   disposeGraceMs: z.natural().default(3000),
   maxSessionsPerProcess: z.natural().default(100),
+  maxPromptBytes: z.natural().default(180000),
+  ignoreUnsupportedOptions: z.boolean().default(true),
+  contextWindow: z.natural().default(110000),
+  contextWindows: z.dict(z.natural()).default({}),
 });
 export function resolveConfig(input: Partial<Config> = {}): Config {
   const config = Config(input as Config);
@@ -53,9 +61,15 @@ export function resolveConfig(input: Partial<Config> = {}): Config {
     'toolTimeoutMs',
     'maxActiveToolSessions',
     'idleProcessTimeoutMs',
+    'maxPromptBytes',
+    'contextWindow',
   ] as const) {
     if (!Number.isSafeInteger(config[key]) || config[key] <= 0 || config[key] > 2147483647)
       throw new Error(`${key} must be a positive integer <= 2147483647`);
+  }
+  for (const [model, cw] of Object.entries(config.contextWindows)) {
+    if (!Number.isSafeInteger(cw) || cw <= 0 || cw > 2147483647)
+      throw new Error(`contextWindows.${model} must be a positive integer <= 2147483647`);
   }
   return config;
 }

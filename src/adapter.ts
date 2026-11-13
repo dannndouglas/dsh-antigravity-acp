@@ -136,12 +136,14 @@ export class AntigravityAcpAdapter extends LlmAdapter {
     signal?: AbortSignal,
   ): Promise<LlmResolvedModelInfo> {
     if (signal?.aborted) throw aborted();
+    const cw = this.config.contextWindows?.[model] ?? this.config.contextWindow;
     return {
       provider,
       id: model,
       name: this.catalog.find((m) => m.id === model)?.name ?? model,
       inputModalities: ['text'],
       reasoning: REASONING_META,
+      ...(cw ? { context: { contextWindow: cw } } : {}),
     };
   }
   diagnostics() {
