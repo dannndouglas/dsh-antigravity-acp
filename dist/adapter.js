@@ -1,7 +1,7 @@
-import { LlmAdapter, LlmError, ReasoningEffortId, } from '@deepseek-ai/dsh-llm';
+import { LlmAdapter, ReasoningEffortId, } from '@deepseek-ai/dsh-llm';
 import { AcpClient } from './acp/client.js';
 import { EventMapper, finishReason } from './acp/events.js';
-import { aborted, classify } from './acp/errors.js';
+import { aborted, acpError, classify } from './acp/errors.js';
 import { modelCatalog } from './models.js';
 import { buildPrompt } from './prompt.js';
 import { ToolSessions } from './mcp/sessions.js';
@@ -53,7 +53,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
     }
     async acquire(signal) {
         if (this.disposed)
-            throw new LlmError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
+            throw acpError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
         if (signal?.aborted)
             throw aborted();
         const previous = this.tail;
@@ -71,7 +71,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
             });
             await Promise.race([previous, abort]);
             if (this.disposed)
-                throw new LlmError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
+                throw acpError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
             return release;
         }
         catch (error) {
@@ -176,7 +176,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
             await client.selectModel(session, options.model, options.signal);
             this.generations++;
             const nativeTools = () => {
-                error = new LlmError('Antigravity attempted native agent tool activity. This provider supports text only; tools remain unavailable on this route.', 'ACP_NATIVE_TOOLS_UNSUPPORTED');
+                error = acpError('Antigravity attempted native agent tool activity. This provider supports text only; tools remain unavailable on this route.', 'ACP_NATIVE_TOOLS_UNSUPPORTED');
                 done = true;
                 wake?.();
             };
@@ -220,7 +220,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
             if (options.signal?.aborted)
                 throw aborted();
             if (!mapper.hasText && stop === 'end_turn')
-                throw new LlmError('Official ACP server ended the turn without assistant text.', 'EMPTY_RESPONSE');
+                throw acpError('Official ACP server ended the turn without assistant text.', 'EMPTY_RESPONSE');
             yield* mapper.end();
             // ACP usage_update reports current context occupancy, not per-call token billing.
             completed = stop === 'end_turn';

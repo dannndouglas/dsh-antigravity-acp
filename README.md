@@ -19,8 +19,8 @@ commands and installed extension tools use this same DSH execution path.
 ## Install
 
 Requires Node.js **>=22.19**. Supports DSH **0.2.0-rc.2**, **0.2.1-alpha.1**,
-**0.2.1-rc.2**, **0.2.1-rc.3**, **0.2.1-rc.5** and **0.2.2-rc.1**. Version **0.3.5** adds
-DSH 0.2.2-rc.1 and Cordis 4.1 compatibility. The package uses the host's matching services; no version exemption
+**0.2.1-rc.2**, **0.2.1-rc.3**, **0.2.1-rc.5**, **0.2.2-rc.1** and **0.2.2-rc.2**.
+Version **0.3.6** adds DSH 0.2.2-rc.2. The package uses the host's matching services; no version exemption
 is needed.
 The thinking tier is selected by the exact model ID (for example, a `-low`
 suffix). The host's separate reasoning-effort selector is accepted for
@@ -56,7 +56,7 @@ installation. Development checkout:
 npm ci
 npm run check
 npm pack
-dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.5.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.6.tgz
 ```
 
 ## How tools work
@@ -84,11 +84,14 @@ error. YOLO mode, client filesystem and client terminal capabilities stay off.
 The official executable is an agent, so these protocol guardrails **are not an
 OS sandbox** and cannot undo a native action performed before its notification.
 
-DSH remains the history authority. Independent turns start from full DSH context.
-Version 0.3.3 also lets requests without tools borrow a ready server process.
-The first such request can claim the still-empty model-discovery session once,
-avoiding redundant process startup and session creation. Later independent turns
-receive fresh ACP sessions; tool turns always receive their own MCP bridge.
+DSH remains the history authority. The first turn sends the full DSH context, with
+the current user task repeated outside the transcript. A later message from the
+person continues the same ACP session and sends only that task; runtime reminders
+are not tasks. If that session is gone, the replacement session receives the user
+and assistant text without the tool transcript. Version 0.3.3 also lets requests
+without tools borrow a ready server process. The first such request can claim the
+still-empty model-discovery session once, avoiding redundant process startup and
+session creation. Tool turns keep their own MCP bridge.
 At most two completed processes stay ready for five minutes, then shut down.
 Cancellation, errors and early stream termination discard the affected process.
 This is automatic; no extra setup is required. Two real Flash Low samples per

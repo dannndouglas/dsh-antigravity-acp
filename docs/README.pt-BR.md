@@ -8,8 +8,8 @@ de modelos do Antigravity.
 ## Instalação
 
 Use Node.js >=22.19 e DSH **0.2.0-rc.2**, **0.2.1-alpha.1**, **0.2.1-rc.2**,
-**0.2.1-rc.3**, **0.2.1-rc.5** ou **0.2.2-rc.1**. A versão **0.3.5** adiciona
-compatibilidade com o DSH 0.2.2-rc.1 e Cordis 4.1. O plugin usa os serviços fornecidos pelo próprio DSH. Não é necessário
+**0.2.1-rc.3**, **0.2.1-rc.5**, **0.2.2-rc.1** ou **0.2.2-rc.2**. A versão **0.3.6** adiciona
+compatibilidade com o DSH 0.2.2-rc.2. O plugin usa os serviços fornecidos pelo próprio DSH. Não é necessário
 aceitar exceções de versão ou alterar configurações.
 
 O nível de raciocínio é escolhido pelo ID exato do modelo, como o sufixo `-low`.

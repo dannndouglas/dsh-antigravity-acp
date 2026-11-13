@@ -4,13 +4,15 @@ import { AcpClient } from '../acp/client.js';
 import type { Config } from '../config.js';
 import type { AcpGenerateOptions as GenerateOptions } from '../request.js';
 /** Active turns own separate ACP processes, avoiding subagent deadlocks.
- * Completed processes can stay ready; every independent turn gets a fresh ACP session.
+ * A completed turn keeps its ACP session briefly so the next user message is a follow-up.
+ * A new session, when one is required, receives the current task rather than the tool transcript.
  */
 export declare class ToolSessions {
     private config;
     private runtime;
     private notify;
     private bindings;
+    private retained;
     private closing;
     private idleClients;
     private borrowedClients;
@@ -37,6 +39,11 @@ export declare class ToolSessions {
     private watch;
     private queueTool;
     private create;
+    private canFollowUp;
+    private claimFollowUp;
+    private relinquish;
+    private donateProcess;
+    private retain;
     private matches;
     private resume;
     stream(o: GenerateOptions): AsyncIterable<StreamChunk>;

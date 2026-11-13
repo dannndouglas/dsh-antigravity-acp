@@ -6,8 +6,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import * as yauzl from 'yauzl';
-import { LlmError } from '@deepseek-ai/dsh-llm';
-import { aborted } from './errors.js';
+import { aborted, acpError } from './errors.js';
 // URLs pinned to the official ACP Registry's 1.3.0 distribution. No mirror,
 // update feed or third-party download can choose executable code at runtime.
 export const SERVER_VERSION = '1.3.0';
@@ -15,7 +14,7 @@ export function distribution(platform = process.platform, arch = process.arch) {
     const os = { win32: 'windows', darwin: 'macos', linux: 'linux' }[platform];
     const cpu = { x64: 'x86_64', arm64: 'arm64' }[arch];
     if (!os || !cpu)
-        throw new LlmError('Automatic Antigravity installation is unsupported on this OS/architecture.', 'ACP_PLATFORM_UNSUPPORTED');
+        throw acpError('Automatic Antigravity installation is unsupported on this OS/architecture.', 'ACP_PLATFORM_UNSUPPORTED');
     const label = platform === 'darwin' ? 'darwin' : os;
     return {
         key: `${platform}-${arch}`,
@@ -229,7 +228,7 @@ export async function ensureOfficialServer(options = {}) {
     catch {
         if (options.signal?.aborted)
             throw aborted();
-        throw new LlmError('Automatic official Antigravity download failed. Check internet access and free disk space, then retry in DSH.', 'ACP_INSTALL_FAILED');
+        throw acpError('Automatic official Antigravity download failed. Check internet access and free disk space, then retry in DSH.', 'ACP_INSTALL_FAILED');
     }
     finally {
         // stage is created directly inside this installer-owned cache root.

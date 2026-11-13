@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { LlmError, } from '@deepseek-ai/dsh-llm';
 import { AcpClient } from '../acp/client.js';
 import { EventMapper, finishReason } from '../acp/events.js';
-import { aborted, classify } from '../acp/errors.js';
-import { buildPrompt } from '../prompt.js';
+import { aborted, acpError, classify } from '../acp/errors.js';
+import { buildPrompt, followUpPrompt, latestHumanText } from '../prompt.js';
 import { DshMcpBridge } from './bridge.js';
 function history(messages) {
     return messages.map((m) => JSON.stringify({
@@ -27,13 +26,15 @@ const unavailable = () => ({
     ],
 });
 /** Active turns own separate ACP processes, avoiding subagent deadlocks.
- * Completed processes can stay ready; every independent turn gets a fresh ACP session.
+ * A completed turn keeps its ACP session briefly so the next user message is a follow-up.
+ * A new session, when one is required, receives the current task rather than the tool transcript.
  */
 export class ToolSessions {
     config;
     runtime;
     notify;
     bindings = new Map();
+    retained = new Map();
     closing = new Set();
     idleClients = new Map();
     borrowedClients = new Set();
@@ -51,7 +52,7 @@ export class ToolSessions {
         return this.bindings.size;
     }
     get idle() {
-        return this.idleClients.size;
+        return this.idleClients.size + this.retained.size;
     }
     get connected() {
         return [
@@ -134,7 +135,7 @@ export class ToolSessions {
     deadline(b, ms, code) {
         clearTimeout(b.timer);
         b.timer = setTimeout(() => {
-            this.fail(b, new LlmError(code === 'ACP_TOOL_TIMEOUT'
+            this.fail(b, acpError(code === 'ACP_TOOL_TIMEOUT'
                 ? 'DSH did not return the tool result before the bridge deadline. Retry from the saved DSH conversation.'
                 : 'Official ACP generation timed out.', code));
             void this.close(b).catch(() => { });
@@ -180,7 +181,7 @@ export class ToolSessions {
     }
     async create(o) {
         if (this.bindings.size >= this.config.maxActiveToolSessions)
-            throw new LlmError('Too many active ACP tool sessions. Finish or cancel an existing turn.', 'ACP_SESSION_LIMIT');
+            throw acpError('Too many active ACP tool sessions. Finish or cancel an existing turn.', 'ACP_SESSION_LIMIT');
         const key = o.sessionId && !o.purpose ? o.sessionId : randomUUID();
         const client = this.takeClient();
         if (this.disposed || o.signal?.aborted) {
@@ -206,7 +207,7 @@ export class ToolSessions {
         try {
             await client.start(b.controller.signal);
             if (!client.initializeResult?.agentCapabilities?.mcpCapabilities?.http)
-                throw new LlmError('Official ACP server does not advertise HTTP MCP support.', 'ACP_MCP_UNSUPPORTED');
+                throw acpError('Official ACP server does not advertise HTTP MCP support.', 'ACP_MCP_UNSUPPORTED');
             const descriptor = await b.bridge.start();
             const session = await client.newSession(b.controller.signal, true, [descriptor]);
             b.sessionId = session.sessionId;
@@ -219,7 +220,7 @@ export class ToolSessions {
                     if (b.bridge.owns(u))
                         b.trustedAcpIds.add(u.toolCallId);
                     else if (!b.trustedAcpIds.has(u.toolCallId))
-                        this.fail(b, new LlmError('Antigravity attempted a native tool outside the DSH MCP bridge. The request was cancelled.', 'ACP_NATIVE_TOOLS_UNSUPPORTED'));
+                        this.fail(b, acpError('Antigravity attempted a native tool outside the DSH MCP bridge. The request was cancelled.', 'ACP_NATIVE_TOOLS_UNSUPPORTED'));
                     return; // Agent-owned ACP updates are never fabricated into DSH tool calls.
                 }
                 const w = b.writer;
@@ -234,7 +235,7 @@ export class ToolSessions {
                     if (allow)
                         return { outcome: { outcome: 'selected', optionId: allow.optionId } };
                 }
-                this.fail(b, new LlmError('Antigravity requested permission for a tool outside the DSH bridge.', 'ACP_NATIVE_TOOLS_UNSUPPORTED'));
+                this.fail(b, acpError('Antigravity requested permission for a tool outside the DSH bridge.', 'ACP_NATIVE_TOOLS_UNSUPPORTED'));
                 return { outcome: { outcome: 'cancelled' } };
             };
             return b;
@@ -243,6 +244,80 @@ export class ToolSessions {
             await this.close(b);
             throw error;
         }
+    }
+    canFollowUp(b, o) {
+        if (o.purpose || !o.sessionId || o.sessionId !== b.key || !b.client.connected || !b.sessionId)
+            return false;
+        if (signature(o) !== b.signature)
+            return false;
+        const current = history(o.messages);
+        return (current.length >= b.history.length &&
+            b.history.every((message, index) => message === current[index]) &&
+            latestHumanText(o.messages.slice(b.history.length)) !== undefined);
+    }
+    claimFollowUp(o) {
+        if (!o.sessionId)
+            return undefined;
+        const held = this.retained.get(o.sessionId);
+        if (!held || !this.canFollowUp(held, o))
+            return undefined;
+        this.retained.delete(o.sessionId);
+        if (held.retainTimer)
+            clearTimeout(held.retainTimer);
+        held.retainTimer = undefined;
+        held.done = false;
+        held.stop = '';
+        held.error = undefined;
+        held.history = history(o.messages);
+        this.bindings.set(held.key, held);
+        return held;
+    }
+    async relinquish(b) {
+        if (this.retained.get(b.key) === b)
+            this.retained.delete(b.key);
+        if (b.retainTimer)
+            clearTimeout(b.retainTimer);
+        b.retainTimer = undefined;
+        b.listeners.splice(0).forEach((remove) => remove());
+        b.client.onUpdate = undefined;
+        b.client.onPermission = undefined;
+        try {
+            await b.bridge.close();
+        }
+        finally {
+            await this.keepClient(b.client);
+        }
+    }
+    async donateProcess(o) {
+        const own = o.sessionId ? this.retained.get(o.sessionId) : undefined;
+        const donor = own ?? this.retained.values().next().value;
+        if (donor)
+            await this.relinquish(donor);
+    }
+    async retain(b) {
+        this.account(b.client);
+        if (this.bindings.get(b.key) === b)
+            this.bindings.delete(b.key);
+        clearTimeout(b.timer);
+        b.listeners.splice(0).forEach((remove) => remove());
+        b.writer = undefined;
+        while (this.retained.size >= 2) {
+            const oldest = this.retained.values().next().value;
+            if (!oldest)
+                break;
+            this.retained.delete(oldest.key);
+            if (oldest.retainTimer)
+                clearTimeout(oldest.retainTimer);
+            await this.close(oldest, false);
+        }
+        this.retained.set(b.key, b);
+        b.retainTimer = setTimeout(() => {
+            if (this.retained.get(b.key) !== b)
+                return;
+            this.retained.delete(b.key);
+            void this.close(b, false).catch(() => { });
+        }, this.config.idleProcessTimeoutMs);
+        b.retainTimer.unref();
     }
     matches(b, o) {
         const current = history(o.messages);
@@ -262,7 +337,7 @@ export class ToolSessions {
                     c.name === p.call.name &&
                     c.arguments === p.call.arguments));
             if (matching.length !== 1 || !hasCall)
-                throw new LlmError('A pending DSH tool call requires exactly one matching assistant call and tool result.', 'ACP_TOOL_RESULTS_MISSING');
+                throw acpError('A pending DSH tool call requires exactly one matching assistant call and tool result.', 'ACP_TOOL_RESULTS_MISSING');
             const message = matching[0];
             if (message.role !== 'tool')
                 throw new Error('Unreachable');
@@ -278,7 +353,7 @@ export class ToolSessions {
             };
         });
         if (!exposed.length)
-            throw new LlmError('The ACP session has no exposed calls to resume.', 'ACP_SESSION_BUSY');
+            throw acpError('The ACP session has no exposed calls to resume.', 'ACP_SESSION_BUSY');
         b.history = history(o.messages);
         for (const { pending, result } of results) {
             b.pending.delete(pending.call.id);
@@ -289,22 +364,26 @@ export class ToolSessions {
     }
     async *stream(o) {
         if (this.disposed)
-            throw new LlmError('ACP adapter disposed.', 'ACP_DISPOSED');
+            throw acpError('ACP adapter disposed.', 'ACP_DISPOSED');
         if (o.signal?.aborted)
             throw aborted();
-        let b = this.find(o), fresh = !b, parked = false, completed = false;
+        const continued = this.claimFollowUp(o);
+        if (!continued)
+            await this.donateProcess(o);
+        let b = continued ?? this.find(o), fresh = !b, parked = false, completed = false;
         if (b && (!b.sessionId || b.writer))
-            throw new LlmError('This DSH session already has an active generation.', 'ACP_SESSION_BUSY');
+            throw acpError('This DSH session already has an active generation.', 'ACP_SESSION_BUSY');
         let prompt;
         try {
-            prompt = buildPrompt(o, this.config);
+            const task = latestHumanText(o.messages);
+            prompt = continued && task ? followUpPrompt(task) : buildPrompt(o, this.config);
         }
         catch (error) {
             if (b)
                 await this.close(b);
             throw error;
         }
-        if (b && !this.matches(b, o)) {
+        if (b && !continued && !this.matches(b, o)) {
             await this.close(b);
             b = undefined;
             fresh = true;
@@ -317,8 +396,10 @@ export class ToolSessions {
         };
         b.writer = w;
         try {
-            if (fresh) {
+            if (fresh || continued) {
                 this.generations++;
+                if (continued)
+                    this.watch(b, o.signal);
                 this.deadline(b, this.config.timeoutMs, 'ACP_TIMEOUT');
                 // Per-segment generation and tool deadlines above own the budget while MCP is parked.
                 void b.client.prompt(b.sessionId, prompt, b.controller.signal, 2147483647).then((result) => {
@@ -370,7 +451,7 @@ export class ToolSessions {
                 });
             }
             if (!w.mapper.hasText && b.stop === 'end_turn')
-                throw new LlmError('Official ACP server ended without assistant text.', 'EMPTY_RESPONSE');
+                throw acpError('Official ACP server ended without assistant text.', 'EMPTY_RESPONSE');
             yield* w.mapper.end();
             completed = b.stop === 'end_turn';
             yield { type: 'finish', reason: finishReason(b.stop) };
@@ -382,8 +463,13 @@ export class ToolSessions {
             clearTimeout(w.batch);
             if (b.writer === w)
                 b.writer = undefined;
-            if (!parked)
-                await this.close(b, completed && !o.signal?.aborted && !b.error);
+            if (!parked) {
+                const reusable = completed && !o.signal?.aborted && !b.error;
+                if (reusable && o.sessionId && b.client.connected && !b.pending.size)
+                    await this.retain(b);
+                else
+                    await this.close(b, reusable);
+            }
         }
     }
     async close(b, reusable = false) {
@@ -430,6 +516,12 @@ export class ToolSessions {
         this.disposed = true;
         for (const timer of this.idleClients.values())
             clearTimeout(timer);
+        const retained = [...this.retained.values()];
+        this.retained.clear();
+        for (const binding of retained) {
+            if (binding.retainTimer)
+                clearTimeout(binding.retainTimer);
+        }
         const idle = [...new Set([...this.idleClients.keys(), ...this.borrowedClients])].map((client) => {
             return client.dispose();
         });
@@ -438,6 +530,7 @@ export class ToolSessions {
         await Promise.all([
             ...idle,
             ...this.closing,
+            ...retained.map((binding) => this.close(binding)),
             ...[...this.bindings.values()].map((b) => this.close(b)),
         ]);
     }
