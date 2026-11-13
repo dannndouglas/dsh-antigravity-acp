@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
-import { LlmError } from '@deepseek-ai/dsh-llm';
+import { acpError } from './errors.js';
 import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess';
 import type { Config } from '../config.js';
 import { ensureOfficialServer } from './installer.js';
@@ -39,7 +39,7 @@ export async function resolveCommand(
     });
     return runtime.resolveExecutable(command, undefined, signal);
   }
-  throw new LlmError(
+  throw acpError(
     'Official Antigravity ACP binary was not found. Remove an invalid command override or enable automatic installation, then retry in DSH.',
     'ACP_BINARY_MISSING',
   );

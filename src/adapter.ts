@@ -1,6 +1,5 @@
 import {
   LlmAdapter,
-  LlmError,
   ReasoningEffortId,
   type StreamChunk,
   type LlmModelInfo,
@@ -9,7 +8,7 @@ import {
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess';
 import { AcpClient } from './acp/client.js';
 import { EventMapper, finishReason } from './acp/events.js';
-import { aborted, classify } from './acp/errors.js';
+import { aborted, acpError, classify } from './acp/errors.js';
 import { modelCatalog } from './models.js';
 import { buildPrompt } from './prompt.js';
 import type { Config } from './config.js';
@@ -63,7 +62,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
   }
 
   private async acquire(signal?: AbortSignal): Promise<() => void> {
-    if (this.disposed) throw new LlmError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
+    if (this.disposed) throw acpError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
     if (signal?.aborted) throw aborted();
     const previous = this.tail;
     let release!: () => void;
@@ -78,8 +77,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
         if (signal?.aborted) onAbort();
       });
       await Promise.race([previous, abort]);
-      if (this.disposed)
-        throw new LlmError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
+      if (this.disposed) throw acpError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
       return release;
     } catch (error) {
       void previous.then(release);
@@ -190,7 +188,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
       await client.selectModel(session, options.model, options.signal);
       this.generations++;
       const nativeTools = () => {
-        error = new LlmError(
+        error = acpError(
           'Antigravity attempted native agent tool activity. This provider supports text only; tools remain unavailable on this route.',
           'ACP_NATIVE_TOOLS_UNSUPPORTED',
         );
@@ -238,7 +236,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
       await pending;
       if (options.signal?.aborted) throw aborted();
       if (!mapper.hasText && stop === 'end_turn')
-        throw new LlmError(
+        throw acpError(
           'Official ACP server ended the turn without assistant text.',
           'EMPTY_RESPONSE',
         );

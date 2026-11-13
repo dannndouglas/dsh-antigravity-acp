@@ -19,8 +19,8 @@ commands and installed extension tools use this same DSH execution path.
 ## Install
 
 Requires Node.js **>=22.19**. Supports DSH **0.2.0-rc.2**, **0.2.1-alpha.1**,
-**0.2.1-rc.2**, **0.2.1-rc.3**, **0.2.1-rc.5** and **0.2.2-rc.1**. Version **0.3.5** adds
-DSH 0.2.2-rc.1 and Cordis 4.1 compatibility. The package uses the host's matching services; no version exemption
+**0.2.1-rc.2**, **0.2.1-rc.3**, **0.2.1-rc.5**, **0.2.2-rc.1** and **0.2.2-rc.2**.
+Version **0.3.6** adds DSH 0.2.2-rc.2. The package uses the host's matching services; no version exemption
 is needed.
 The thinking tier is selected by the exact model ID (for example, a `-low`
 suffix). The host's separate reasoning-effort selector is accepted for
@@ -56,7 +56,7 @@ installation. Development checkout:
 npm ci
 npm run check
 npm pack
-dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.5.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.6.tgz
 ```
 
 ## How tools work
