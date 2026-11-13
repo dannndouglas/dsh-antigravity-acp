@@ -169,13 +169,17 @@ describe('official ACP provider contract (fake server)', () => {
     });
   });
   it('refuses unsupported sampling options, images, strict tools and protocol versions', async () => {
+    const strict = adapter('normal', { ignoreUnsupportedOptions: false });
+    await expect(collect(strict, { ...options(), maxTokens: 10 })).rejects.toMatchObject({
+      code: 'UNSUPPORTED_OPTION',
+    });
+    await expect(collect(strict, { ...options(), stop: ['stop'] })).rejects.toMatchObject({
+      code: 'UNSUPPORTED_OPTION',
+    });
+    // With default ignoreUnsupportedOptions: true, sampling options are safely ignored
     const a = adapter();
-    await expect(collect(a, { ...options(), maxTokens: 10 })).rejects.toMatchObject({
-      code: 'UNSUPPORTED_OPTION',
-    });
-    await expect(collect(a, { ...options(), stop: ['stop'] })).rejects.toMatchObject({
-      code: 'UNSUPPORTED_OPTION',
-    });
+    await expect(collect(a, { ...options(), maxTokens: 10 })).resolves.toBeDefined();
+    await expect(collect(a, { ...options(), stop: ['stop'] })).resolves.toBeDefined();
     await expect(
       collect(adapter('normal', { toolPolicy: 'reject' }), {
         ...options(),
@@ -219,11 +223,22 @@ describe('official ACP provider contract (fake server)', () => {
     ).rejects.toMatchObject({ code: 'ACP_INVALID_MODEL' });
   });
   it('checks images and unsupported sampling before starting a process', async () => {
-    const a = adapter();
-    await expect(collect(a, { ...options(), temperature: 0.5 })).rejects.toMatchObject({
+    const strict = adapter('normal', { ignoreUnsupportedOptions: false });
+    await expect(collect(strict, { ...options(), temperature: 0.5 })).rejects.toMatchObject({
       code: 'UNSUPPORTED_OPTION',
     });
-    expect(a.diagnostics().processStarts).toBe(0);
+    expect(strict.diagnostics().processStarts).toBe(0);
+  });
+  it('declares contextWindow on resolveModel from default config and model override', async () => {
+    const a = adapter('normal', {
+      contextWindow: 110000,
+      contextWindows: { 'custom-model': 200000 },
+    });
+    const defaultModel = await a.resolveModel('antigravity-acp', 'fake-model');
+    expect(defaultModel.context?.contextWindow).toBe(110000);
+
+    const customModel = await a.resolveModel('antigravity-acp', 'custom-model');
+    expect(customModel.context?.contextWindow).toBe(200000);
   });
   it('never includes remote JSON-RPC error message text in public errors', async () => {
     const a = adapter('error');

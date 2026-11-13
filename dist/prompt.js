@@ -1,14 +1,17 @@
 import { LlmError } from '@deepseek-ai/dsh-llm';
-import { mcpToolName } from './mcp/bridge.js';
+import { clipMessage, newestRoundStart, withPromptBudget } from './prompt-budget.js';
+const USER_PREVIEW_MAX_BYTES = 6000;
 export function buildPrompt(options, config) {
     // Host reasoning metadata accepts the request field; ACP's exact model ID
     // selects the thinking tier, so reasoningEffort is intentionally not forwarded.
-    for (const key of ['temperature', 'maxTokens']) {
-        if (options[key] !== undefined)
-            throw new LlmError(`ACP does not expose ${key}. Remove that request option; select an exact model ID for its reasoning tier.`, 'UNSUPPORTED_OPTION');
+    if (!config.ignoreUnsupportedOptions) {
+        for (const key of ['temperature', 'maxTokens']) {
+            if (options[key] !== undefined)
+                throw new LlmError(`ACP does not expose ${key}. Remove that request option; select an exact model ID for its reasoning tier.`, 'UNSUPPORTED_OPTION');
+        }
+        if (options.stop?.length)
+            throw new LlmError('ACP does not expose stop sequences.', 'UNSUPPORTED_OPTION');
     }
-    if (options.stop?.length)
-        throw new LlmError('ACP does not expose stop sequences.', 'UNSUPPORTED_OPTION');
     if (config.toolPolicy === 'reject' &&
         (options.tools?.length || options.toolHistory?.tools.length))
         throw new LlmError('toolPolicy: reject refuses tool schemas. Use the default bridge policy to execute DSH tools.', 'UNSUPPORTED_OPTION');
@@ -21,7 +24,7 @@ export function buildPrompt(options, config) {
             return b; // Preserve historical text, reasoning, tool calls/results and developer updates.
         }),
     }));
-    return [
+    const instructions = [
         'DeepSeek Harness owns this conversation. Produce only the next assistant response using the supplied conversation.',
         ...(config.toolPolicy === 'bridge' && options.tools?.length
             ? [
@@ -33,21 +36,30 @@ export function buildPrompt(options, config) {
                 'This is a text-only backend. Do not invoke native tools, slash commands, skills, file access, terminals, network tools, or MCP.',
                 'DSH tools are unavailable on this request. If an action needs tools, explain that limitation in your answer.',
             ]),
-        'The JSON below is the complete DSH-controlled history, with roles and historical tool results. Answer its final user message. Do not repeat the transcript.',
-        JSON.stringify({
-            system: options.system ?? null,
-            messages,
-            ...(config.toolPolicy === 'bridge' && options.tools?.length
-                ? {
-                    dshMcpTools: options.tools.map((tool) => ({
-                        mcpServer: 'dsh-bridge',
-                        mcpName: mcpToolName(tool.name),
-                        dshName: tool.name,
-                        description: tool.description,
-                        parameters: tool.parameters,
-                    })),
-                }
-                : {}),
-        }),
-    ].join('\n\n');
+    ];
+    const assemble = (visible) => {
+        const keepFrom = newestRoundStart(visible);
+        const preview = [];
+        for (let i = visible.length - 1; i >= keepFrom; i--) {
+            const msg = visible[i];
+            if (msg?.role !== 'user')
+                continue;
+            preview.unshift(JSON.stringify(clipMessage(msg, USER_PREVIEW_MAX_BYTES)));
+        }
+        return [
+            ...instructions,
+            ...(preview.length
+                ? [
+                    'CURRENT USER REQUEST (verbatim; newest last). This is the request you must answer:',
+                    ...preview,
+                ]
+                : []),
+            'The JSON below is the complete DSH-controlled history, with roles and historical tool results. Answer its final user message. Do not repeat the transcript.',
+            JSON.stringify({
+                system: options.system ?? null,
+                messages: visible,
+            }),
+        ].join('\n\n');
+    };
+    return withPromptBudget(messages, assemble, config.maxPromptBytes).prompt;
 }
