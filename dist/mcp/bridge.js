@@ -118,7 +118,7 @@ export class DshMcpBridge {
             parts.push(part);
         }
         const body = JSON.parse(Buffer.concat(parts).toString('utf8'));
-        const protocol = new Server({ name: 'dsh-bridge', version: '0.3.6' }, { capabilities: { tools: {} } });
+        const protocol = new Server({ name: 'dsh-bridge', version: '0.3.7' }, { capabilities: { tools: {} } });
         this.protocols.add(protocol);
         protocol.setRequestHandler(ListToolsRequestSchema, () => ({
             tools: this.tools.map((t) => ({

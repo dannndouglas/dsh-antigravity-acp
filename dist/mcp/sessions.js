@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AcpClient } from '../acp/client.js';
 import { EventMapper, finishReason } from '../acp/events.js';
 import { aborted, acpError, classify } from '../acp/errors.js';
-import { buildPrompt } from '../prompt.js';
+import { buildPrompt, followUpPrompt, latestHumanText } from '../prompt.js';
 import { DshMcpBridge } from './bridge.js';
 function history(messages) {
     return messages.map((m) => JSON.stringify({
@@ -26,13 +26,15 @@ const unavailable = () => ({
     ],
 });
 /** Active turns own separate ACP processes, avoiding subagent deadlocks.
- * Completed processes can stay ready; every independent turn gets a fresh ACP session.
+ * A completed turn keeps its ACP session briefly so the next user message is a follow-up.
+ * A new session, when one is required, receives the current task rather than the tool transcript.
  */
 export class ToolSessions {
     config;
     runtime;
     notify;
     bindings = new Map();
+    retained = new Map();
     closing = new Set();
     idleClients = new Map();
     borrowedClients = new Set();
@@ -50,7 +52,7 @@ export class ToolSessions {
         return this.bindings.size;
     }
     get idle() {
-        return this.idleClients.size;
+        return this.idleClients.size + this.retained.size;
     }
     get connected() {
         return [
@@ -243,6 +245,80 @@ export class ToolSessions {
             throw error;
         }
     }
+    canFollowUp(b, o) {
+        if (o.purpose || !o.sessionId || o.sessionId !== b.key || !b.client.connected || !b.sessionId)
+            return false;
+        if (signature(o) !== b.signature)
+            return false;
+        const current = history(o.messages);
+        return (current.length >= b.history.length &&
+            b.history.every((message, index) => message === current[index]) &&
+            latestHumanText(o.messages.slice(b.history.length)) !== undefined);
+    }
+    claimFollowUp(o) {
+        if (!o.sessionId)
+            return undefined;
+        const held = this.retained.get(o.sessionId);
+        if (!held || !this.canFollowUp(held, o))
+            return undefined;
+        this.retained.delete(o.sessionId);
+        if (held.retainTimer)
+            clearTimeout(held.retainTimer);
+        held.retainTimer = undefined;
+        held.done = false;
+        held.stop = '';
+        held.error = undefined;
+        held.history = history(o.messages);
+        this.bindings.set(held.key, held);
+        return held;
+    }
+    async relinquish(b) {
+        if (this.retained.get(b.key) === b)
+            this.retained.delete(b.key);
+        if (b.retainTimer)
+            clearTimeout(b.retainTimer);
+        b.retainTimer = undefined;
+        b.listeners.splice(0).forEach((remove) => remove());
+        b.client.onUpdate = undefined;
+        b.client.onPermission = undefined;
+        try {
+            await b.bridge.close();
+        }
+        finally {
+            await this.keepClient(b.client);
+        }
+    }
+    async donateProcess(o) {
+        const own = o.sessionId ? this.retained.get(o.sessionId) : undefined;
+        const donor = own ?? this.retained.values().next().value;
+        if (donor)
+            await this.relinquish(donor);
+    }
+    async retain(b) {
+        this.account(b.client);
+        if (this.bindings.get(b.key) === b)
+            this.bindings.delete(b.key);
+        clearTimeout(b.timer);
+        b.listeners.splice(0).forEach((remove) => remove());
+        b.writer = undefined;
+        while (this.retained.size >= 2) {
+            const oldest = this.retained.values().next().value;
+            if (!oldest)
+                break;
+            this.retained.delete(oldest.key);
+            if (oldest.retainTimer)
+                clearTimeout(oldest.retainTimer);
+            await this.close(oldest, false);
+        }
+        this.retained.set(b.key, b);
+        b.retainTimer = setTimeout(() => {
+            if (this.retained.get(b.key) !== b)
+                return;
+            this.retained.delete(b.key);
+            void this.close(b, false).catch(() => { });
+        }, this.config.idleProcessTimeoutMs);
+        b.retainTimer.unref();
+    }
     matches(b, o) {
         const current = history(o.messages);
         return (signature(o) === b.signature &&
@@ -291,19 +367,23 @@ export class ToolSessions {
             throw acpError('ACP adapter disposed.', 'ACP_DISPOSED');
         if (o.signal?.aborted)
             throw aborted();
-        let b = this.find(o), fresh = !b, parked = false, completed = false;
+        const continued = this.claimFollowUp(o);
+        if (!continued)
+            await this.donateProcess(o);
+        let b = continued ?? this.find(o), fresh = !b, parked = false, completed = false;
         if (b && (!b.sessionId || b.writer))
             throw acpError('This DSH session already has an active generation.', 'ACP_SESSION_BUSY');
         let prompt;
         try {
-            prompt = buildPrompt(o, this.config);
+            const task = latestHumanText(o.messages);
+            prompt = continued && task ? followUpPrompt(task) : buildPrompt(o, this.config);
         }
         catch (error) {
             if (b)
                 await this.close(b);
             throw error;
         }
-        if (b && !this.matches(b, o)) {
+        if (b && !continued && !this.matches(b, o)) {
             await this.close(b);
             b = undefined;
             fresh = true;
@@ -316,8 +396,10 @@ export class ToolSessions {
         };
         b.writer = w;
         try {
-            if (fresh) {
+            if (fresh || continued) {
                 this.generations++;
+                if (continued)
+                    this.watch(b, o.signal);
                 this.deadline(b, this.config.timeoutMs, 'ACP_TIMEOUT');
                 // Per-segment generation and tool deadlines above own the budget while MCP is parked.
                 void b.client.prompt(b.sessionId, prompt, b.controller.signal, 2147483647).then((result) => {
@@ -381,8 +463,13 @@ export class ToolSessions {
             clearTimeout(w.batch);
             if (b.writer === w)
                 b.writer = undefined;
-            if (!parked)
-                await this.close(b, completed && !o.signal?.aborted && !b.error);
+            if (!parked) {
+                const reusable = completed && !o.signal?.aborted && !b.error;
+                if (reusable && o.sessionId && b.client.connected && !b.pending.size)
+                    await this.retain(b);
+                else
+                    await this.close(b, reusable);
+            }
         }
     }
     async close(b, reusable = false) {
@@ -429,6 +516,12 @@ export class ToolSessions {
         this.disposed = true;
         for (const timer of this.idleClients.values())
             clearTimeout(timer);
+        const retained = [...this.retained.values()];
+        this.retained.clear();
+        for (const binding of retained) {
+            if (binding.retainTimer)
+                clearTimeout(binding.retainTimer);
+        }
         const idle = [...new Set([...this.idleClients.keys(), ...this.borrowedClients])].map((client) => {
             return client.dispose();
         });
@@ -437,6 +530,7 @@ export class ToolSessions {
         await Promise.all([
             ...idle,
             ...this.closing,
+            ...retained.map((binding) => this.close(binding)),
             ...[...this.bindings.values()].map((b) => this.close(b)),
         ]);
     }

@@ -84,11 +84,14 @@ error. YOLO mode, client filesystem and client terminal capabilities stay off.
 The official executable is an agent, so these protocol guardrails **are not an
 OS sandbox** and cannot undo a native action performed before its notification.
 
-DSH remains the history authority. Independent turns start from full DSH context.
-Version 0.3.3 also lets requests without tools borrow a ready server process.
-The first such request can claim the still-empty model-discovery session once,
-avoiding redundant process startup and session creation. Later independent turns
-receive fresh ACP sessions; tool turns always receive their own MCP bridge.
+DSH remains the history authority. The first turn sends the full DSH context, with
+the current user task repeated outside the transcript. A later message from the
+person continues the same ACP session and sends only that task; runtime reminders
+are not tasks. If that session is gone, the replacement session receives the user
+and assistant text without the tool transcript. Version 0.3.3 also lets requests
+without tools borrow a ready server process. The first such request can claim the
+still-empty model-discovery session once, avoiding redundant process startup and
+session creation. Tool turns keep their own MCP bridge.
 At most two completed processes stay ready for five minutes, then shut down.
 Cancellation, errors and early stream termination discard the affected process.
 This is automatic; no extra setup is required. Two real Flash Low samples per

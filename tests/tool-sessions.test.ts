@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { AntigravityAcpAdapter } from '../src/adapter.js';
 import { resolveConfig } from '../src/config.js';
 import { AcpClient } from '../src/acp/client.js';
+import { buildPrompt } from '../src/prompt.js';
 import type { AcpGenerateOptions as GenerateOptions } from '../src/request.js';
 const live: AntigravityAcpAdapter[] = [],
   contexts: Context[] = [];
@@ -177,6 +178,100 @@ describe('DSH tool round trips over ACP + MCP', () => {
     await collect(adapter, answer(options, first));
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(adapter.diagnostics().processStarts).toBe(1);
+  });
+  it('continues the ACP session with only the new user task', async () => {
+    const { adapter, options } = fixture();
+    const prompted: string[] = [];
+    const sessions = vi.spyOn(AcpClient.prototype, 'newSession');
+    const original = AcpClient.prototype.prompt;
+    const prompt = vi.spyOn(AcpClient.prototype, 'prompt').mockImplementation(function (
+      this: AcpClient,
+      sessionId,
+      text,
+      signal,
+      timeout,
+    ) {
+      prompted.push(text);
+      return original.call(this, sessionId, text, signal, timeout);
+    });
+    try {
+      const first = await collect(adapter, options);
+      await collect(adapter, answer(options, first));
+      const followUp = {
+        ...options,
+        messages: [
+          ...answer(options, first).messages,
+          {
+            role: 'user',
+            source: { kind: 'time-context' },
+            content: [{ type: 'text', text: 'Time sampled while preparing turn 2' }],
+          },
+          {
+            role: 'user',
+            source: { kind: 'user' },
+            content: [{ type: 'text', text: '配色不喜欢' }],
+          },
+        ] as GenerateOptions['messages'],
+      };
+      const continued = await collect(adapter, followUp);
+      expect(continued.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'tool-calls' } });
+      expect(sessions).toHaveBeenCalledTimes(1);
+      expect(prompted).toHaveLength(2);
+      expect(prompted[1]).toContain('配色不喜欢');
+      expect(prompted[1]).not.toContain('Read x');
+      expect(prompted[1]).not.toContain('Time sampled');
+      expect(prompted[1]).not.toContain('CONTENT_x');
+      const done = await collect(adapter, answer(followUp, continued));
+      expect(done.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } });
+      expect(sessions).toHaveBeenCalledTimes(1);
+    } finally {
+      prompt.mockRestore();
+      sessions.mockRestore();
+    }
+  });
+  it('omits tool transcripts when a fresh session has to carry a follow-up', () => {
+    const { options } = fixture();
+    const prompt = buildPrompt(
+      {
+        ...options,
+        system: 'System instructions',
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: 'Read x' }] },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'tool-call', id: 'call', name: 'read_file', arguments: '{"path":"x"}' },
+              { type: 'text', text: 'Delivered the prototype' },
+            ],
+          },
+          {
+            role: 'tool',
+            toolCallId: 'call',
+            content: [{ type: 'text', text: 'TOOL_TRANSCRIPT_SECRET' }],
+          },
+          {
+            role: 'user',
+            source: { kind: 'time-context' },
+            content: [{ type: 'text', text: 'Time sampled while preparing turn 2' }],
+          },
+          {
+            role: 'user',
+            source: { kind: 'user' },
+            content: [{ type: 'text', text: '配色不喜欢' }],
+          },
+        ] as GenerateOptions['messages'],
+      },
+      resolveConfig(),
+    );
+    expect(prompt).toContain('配色不喜欢');
+    expect(prompt).toContain('Delivered the prototype');
+    expect(prompt).toContain('System instructions');
+    expect(prompt).not.toContain('TOOL_TRANSCRIPT_SECRET');
+    expect(prompt).not.toContain('Time sampled');
+    expect(prompt.indexOf('配色不喜欢')).toBeLessThan(prompt.indexOf('Delivered the prototype'));
+    expect(prompt.lastIndexOf('配色不喜欢')).toBeGreaterThan(
+      prompt.indexOf('Delivered the prototype'),
+    );
   });
   it('reuses a ready process across completed turns with fresh ACP sessions and current tools', async () => {
     const { adapter, options, runtime } = fixture();
