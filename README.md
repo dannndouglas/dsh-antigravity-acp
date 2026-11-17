@@ -19,9 +19,11 @@ commands and installed extension tools use this same DSH execution path.
 ## Install
 
 Requires Node.js **>=22.19**. Supports DSH **0.2.0-rc.2**, **0.2.1-alpha.1**,
-**0.2.1-rc.2**, **0.2.1-rc.3**, **0.2.1-rc.5** and **0.2.2-rc.1**. Version **0.3.5** adds
-DSH 0.2.2-rc.1 and Cordis 4.1 compatibility. The package uses the host's matching services; no version exemption
-is needed.
+**0.2.1-rc.2**, **0.2.1-rc.3**, **0.2.1-rc.5**, **0.2.2-rc.1**, **0.2.2-rc.2** and
+**0.2.2-rc.3**. Version **0.3.6** adds DSH 0.2.2-rc.2/rc.3, keeps long conversations
+inside Antigravity's request limit, lets DSH compaction use this provider and keeps
+the `server-default` route valid after model discovery. The package uses the host's
+matching services; no version exemption is needed.
 The thinking tier is selected by the exact model ID (for example, a `-low`
 suffix). The host's separate reasoning-effort selector is accepted for
 compatibility and does not override that model selection.
@@ -56,7 +58,7 @@ installation. Development checkout:
 npm ci
 npm run check
 npm pack
-dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.5.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-antigravity-acp-0.3.6.tgz
 ```
 
 ## How tools work
@@ -84,7 +86,16 @@ error. YOLO mode, client filesystem and client terminal capabilities stay off.
 The official executable is an agent, so these protocol guardrails **are not an
 OS sandbox** and cannot undo a native action performed before its notification.
 
-DSH remains the history authority. Independent turns start from full DSH context.
+DSH remains the history authority. Independent turns start from DSH context.
+Google's server silently cuts one ACP request after about 192 KB, from the end,
+whether the prompt is one block, several blocks or embedded resources. The plugin
+therefore quotes the current user request first and keeps each prompt under
+`maxPromptBytes` (180,000 bytes): DSH tool schemas are not repeated (the MCP
+bridge serves them), whole oldest rounds are omitted first, and only then the
+largest remaining texts are shortened from the middle. Each model also declares
+`contextWindow` (110,000 tokens) so DSH compaction summarizes older history
+before that budget is reached; with DSH's default 65,536-token compaction
+headroom this happens at about 44K estimated tokens.
 Version 0.3.3 also lets requests without tools borrow a ready server process.
 The first such request can claim the still-empty model-discovery session once,
 avoiding redundant process startup and session creation. Later independent turns
@@ -131,26 +142,30 @@ Defaults need no changes. An advanced profile patch targets the existing row:
     toolTimeoutMs: 900000
 ```
 
-| Option                | Default         | Meaning                                                                      |
-| --------------------- | --------------- | ---------------------------------------------------------------------------- |
-| provider              | antigravity-acp | DSH provider route                                                           |
-| command               | empty           | Existing server discovery, then automatic download                           |
-| autoInstall           | true            | Provision Google's server when missing                                       |
-| installTimeoutMs      | 180000          | Download/extraction deadline                                                 |
-| args                  | []              | Extra argv; never interpreted as shell text                                  |
-| auth                  | oauth-personal  | Official authentication method                                               |
-| defaultModel          | empty           | Exact announced ID; empty uses server default                                |
-| models                | []              | Additional IDs, validated before use                                         |
-| toolPolicy            | bridge          | Automatic DSH MCP bridge; text-only omits tools; reject refuses tool schemas |
-| timeoutMs             | 600000          | Active model segment deadline, paused during tool execution                  |
-| toolTimeoutMs         | 900000          | Deadline waiting for DSH tool results/approval                               |
-| maxActiveToolSessions | 16              | Bounded concurrent unfinished tool turns                                     |
-| idleProcessTimeoutMs  | 300000          | Keep up to two completed server processes ready between turns                |
-| requestTimeoutMs      | 30000           | Protocol setup/config deadline                                               |
-| authTimeoutMs         | 600000          | Official browser authorization deadline                                      |
-| cancelGraceMs         | 1500            | Bound for sending ACP cancel                                                 |
-| disposeGraceMs        | 3000            | Managed process EOF grace                                                    |
-| maxSessionsPerProcess | 100             | Recycle retained processes between ACP sessions                              |
+| Option                   | Default         | Meaning                                                                       |
+| ------------------------ | --------------- | ----------------------------------------------------------------------------- |
+| provider                 | antigravity-acp | DSH provider route                                                            |
+| command                  | empty           | Existing server discovery, then automatic download                            |
+| autoInstall              | true            | Provision Google's server when missing                                        |
+| installTimeoutMs         | 180000          | Download/extraction deadline                                                  |
+| args                     | []              | Extra argv; never interpreted as shell text                                   |
+| auth                     | oauth-personal  | Official authentication method                                                |
+| defaultModel             | empty           | Exact announced ID; empty uses server default                                 |
+| models                   | []              | Additional IDs, validated before use                                          |
+| toolPolicy               | bridge          | Automatic DSH MCP bridge; text-only omits tools; reject refuses tool schemas  |
+| timeoutMs                | 600000          | Active model segment deadline, paused during tool execution                   |
+| toolTimeoutMs            | 900000          | Deadline waiting for DSH tool results/approval                                |
+| maxActiveToolSessions    | 16              | Bounded concurrent unfinished tool turns                                      |
+| idleProcessTimeoutMs     | 300000          | Keep up to two completed server processes ready between turns                 |
+| requestTimeoutMs         | 30000           | Protocol setup/config deadline                                                |
+| authTimeoutMs            | 600000          | Official browser authorization deadline                                       |
+| cancelGraceMs            | 1500            | Bound for sending ACP cancel                                                  |
+| disposeGraceMs           | 3000            | Managed process EOF grace                                                     |
+| maxSessionsPerProcess    | 100             | Recycle retained processes between ACP sessions                               |
+| maxPromptBytes           | 180000          | UTF-8 budget for one ACP prompt (server cuts at ~192 KB); minimum 16384       |
+| contextWindow            | 110000          | Context window declared to DSH so compaction runs before the budget is hit    |
+| contextWindows           | {}              | Per-model contextWindow overrides, keyed by exact model ID                    |
+| ignoreUnsupportedOptions | true            | Drop temperature/maxTokens/stop hints (compaction, titles) instead of failing |
 
 Discovery order: command, AGY_ACP_BIN, PATH, known user directories, automatic
 installation. Explicit overrides are authoritative; broken paths fail clearly.
@@ -168,10 +183,18 @@ needs DSH's optional subprocess-local peer; plugin activation uses ctx.subproces
   sent as JSON metadata, not dereferenced file bytes.
 - System instructions are serialized into ACP's user prompt. The official
   agent's own system instructions remain; ACP is not a raw model API.
-- temperature, maxTokens, stop and explicit reasoningEffort fail with
-  UNSUPPORTED_OPTION. Choose an announced model variant for its reasoning tier.
-- usage_update measures context occupancy. Billable token counts and unknown
-  context capacity are not invented.
+- ACP exposes no temperature, maxTokens or stop controls. DSH's own requests
+  (compaction, titles) carry them as hints, so they are ignored by default; set
+  `ignoreUnsupportedOptions: false` to fail with UNSUPPORTED_OPTION instead. The
+  reasoning-effort selector is accepted; the model ID selects the thinking tier.
+- usage_update measures context occupancy. Billable token counts are not
+  invented. The declared context window reflects the request budget, not the
+  model's own capacity; raising it delays DSH compaction and lets the budget
+  omit older history instead.
+- `server-default` is a stable route that follows `defaultModel` or the server's
+  current model. Before the first login it is shown as **Sign in to Antigravity**;
+  sending a message opens the official login. Other discovery failures are shown
+  in DSH's model picker instead of a placeholder.
 - No durable ACP resume. Restart/provider change reconstructs from saved DSH
   history. Partially streamed requests are never automatically replayed.
 - Limits: 256 active tool definitions, 128 KiB per definition, 1 MiB MCP bodies,
@@ -192,7 +215,7 @@ needs DSH's optional subprocess-local peer; plugin activation uses ctx.subproces
 | ACP_SESSION_LIMIT              | Finish/cancel an existing turn or raise maxActiveToolSessions              |
 | ACP_TIMEOUT / ACP_DISCONNECTED | Retry to reconnect; check server connectivity                              |
 | ACP_TEARDOWN_FAILED            | Restart the profile; managed cleanup could not be verified                 |
-| UNSUPPORTED_OPTION             | Remove unsupported sampling settings or project binary input               |
+| UNSUPPORTED_OPTION             | Project binary input, or remove sampling settings in strict option mode    |
 
 Remote errors and stderr are drained without logging account/auth data. Local
 MCP bearer tokens are ephemeral, never logged and unrelated to OAuth credentials.

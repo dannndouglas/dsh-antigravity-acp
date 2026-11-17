@@ -18,6 +18,14 @@ export const Config = z.object({
     cancelGraceMs: z.natural().default(1500),
     disposeGraceMs: z.natural().default(3000),
     maxSessionsPerProcess: z.natural().default(100),
+    // Antigravity cuts one ACP request after ~192 KB; stay below it.
+    maxPromptBytes: z.natural().default(180000),
+    ignoreUnsupportedOptions: z.boolean().default(true),
+    // Declared to DSH so its compaction runs before history outgrows maxPromptBytes:
+    // with the default 65,536-token compaction headroom it compacts at ~44K
+    // estimated tokens (~178 KB at DSH's 4 characters per token).
+    contextWindow: z.natural().default(110000),
+    contextWindows: z.dict(z.natural()).default({}),
 });
 export function resolveConfig(input = {}) {
     const config = Config(input);
@@ -34,9 +42,17 @@ export function resolveConfig(input = {}) {
         'toolTimeoutMs',
         'maxActiveToolSessions',
         'idleProcessTimeoutMs',
+        'maxPromptBytes',
+        'contextWindow',
     ]) {
         if (!Number.isSafeInteger(config[key]) || config[key] <= 0 || config[key] > 2147483647)
             throw new Error(`${key} must be a positive integer <= 2147483647`);
+    }
+    if (config.maxPromptBytes < 16384)
+        throw new Error('maxPromptBytes must be at least 16384');
+    for (const [model, window] of Object.entries(config.contextWindows)) {
+        if (!Number.isSafeInteger(window) || window <= 0 || window > 2147483647)
+            throw new Error(`contextWindows.${model} must be a positive integer <= 2147483647`);
     }
     return config;
 }

@@ -17,7 +17,7 @@ import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subpr
 import type { Config } from '../config.js';
 import { connectTransport } from './transport.js';
 import { disposeProcess, resolveCommand, serverArgs } from './process.js';
-import { aborted, classify } from './errors.js';
+import { aborted, acpError, classify } from './errors.js';
 import { modelOption, selectValues } from '../models.js';
 
 /** One process per adapter, serialized by the adapter. No credentials or history are persisted here. */
@@ -54,7 +54,7 @@ export class AcpClient {
       timer = setTimeout(
         () =>
           reject(
-            new LlmError(
+            acpError(
               'Official ACP operation timed out. The process will be reset; retry to reconnect.',
               'ACP_TIMEOUT',
             ),
@@ -76,7 +76,7 @@ export class AcpClient {
   }
 
   async start(signal?: AbortSignal): Promise<void> {
-    if (this.disposed) throw new LlmError('ACP client has been disposed.', 'ACP_DISPOSED');
+    if (this.disposed) throw acpError('ACP client has been disposed.', 'ACP_DISPOSED');
     if (signal?.aborted) throw aborted();
     if (this.stopping) await this.stopping;
     if (this.connected) return;
@@ -99,7 +99,7 @@ export class AcpClient {
       this.processStarts++;
       const child = this.child;
       if (!child.stdin || !child.stdout)
-        throw new LlmError('ACP subprocess did not expose stdio pipes.', 'ACP_DISCONNECTED');
+        throw acpError('ACP subprocess did not expose stdio pipes.', 'ACP_DISCONNECTED');
       // Drain without logging or retaining server diagnostics (may contain account/auth data).
       child.stderr?.resume();
       const connection = connectTransport(
@@ -116,7 +116,7 @@ export class AcpClient {
       const init = await this.bounded(
         connection.agent.request(methods.agent.initialize, {
           protocolVersion: 1,
-          clientInfo: { name: 'dsh-antigravity-acp', version: '0.3.5' },
+          clientInfo: { name: 'dsh-antigravity-acp', version: '0.3.6' },
           clientCapabilities: {
             fs: { readTextFile: false, writeTextFile: false },
             terminal: false,
@@ -126,7 +126,7 @@ export class AcpClient {
         signal,
       );
       if (init.protocolVersion !== 1)
-        throw new LlmError('The official server did not negotiate ACP v1.', 'ACP_VERSION_MISMATCH');
+        throw acpError('The official server did not negotiate ACP v1.', 'ACP_VERSION_MISMATCH');
       this.initializeResult = init;
     } catch (error) {
       await this.reset();
@@ -138,7 +138,7 @@ export class AcpClient {
     await this.start(signal);
     const method = this.initializeResult?.authMethods?.find((m) => m.id === this.config.auth);
     if (!method || ('type' in method && method.type === 'terminal'))
-      throw new LlmError(
+      throw acpError(
         'This server does not advertise protocol-driven oauth-personal authentication.',
         'ACP_AUTH_UNSUPPORTED',
       );
@@ -202,7 +202,7 @@ export class AcpClient {
       model === 'server-default' ? this.config.defaultModel : model || this.config.defaultModel;
     if (!wanted) return;
     if (!option || !selectValues(option).some((c) => c.value === wanted))
-      throw new LlmError(
+      throw acpError(
         'Selected model is not announced in the official ACP model selector. Run doctor and use an exact server model ID.',
         'ACP_INVALID_MODEL',
       );
@@ -238,10 +238,7 @@ export class AcpClient {
   async logout(signal?: AbortSignal): Promise<void> {
     await this.start(signal);
     if (!this.initializeResult?.agentCapabilities?.auth?.logout)
-      throw new LlmError(
-        'The official server does not advertise logout.',
-        'ACP_METHOD_UNSUPPORTED',
-      );
+      throw acpError('The official server does not advertise logout.', 'ACP_METHOD_UNSUPPORTED');
     await this.bounded(
       this.connection!.agent.request('logout', {}),
       this.config.requestTimeoutMs,
@@ -282,7 +279,7 @@ export class AcpClient {
     try {
       await this.stopping;
     } catch {
-      throw new LlmError(
+      throw acpError(
         'Official ACP subprocess cleanup failed. Restart this DSH profile before retrying.',
         'ACP_TEARDOWN_FAILED',
       );

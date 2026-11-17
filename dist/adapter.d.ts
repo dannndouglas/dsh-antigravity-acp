@@ -3,6 +3,8 @@ import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess';
 import { AcpClient } from './acp/client.js';
 import type { Config } from './config.js';
 import type { AcpGenerateOptions as GenerateOptions } from './request.js';
+/** Stable route that follows `defaultModel` or the server's current model; persisted selections stay valid. */
+export declare const SERVER_DEFAULT = "server-default";
 export declare class AntigravityAcpAdapter extends LlmAdapter {
     readonly config: Config;
     private runtime;

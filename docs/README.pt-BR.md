@@ -8,9 +8,12 @@ de modelos do Antigravity.
 ## Instalação
 
 Use Node.js >=22.19 e DSH **0.2.0-rc.2**, **0.2.1-alpha.1**, **0.2.1-rc.2**,
-**0.2.1-rc.3**, **0.2.1-rc.5** ou **0.2.2-rc.1**. A versão **0.3.5** adiciona
-compatibilidade com o DSH 0.2.2-rc.1 e Cordis 4.1. O plugin usa os serviços fornecidos pelo próprio DSH. Não é necessário
-aceitar exceções de versão ou alterar configurações.
+**0.2.1-rc.3**, **0.2.1-rc.5**, **0.2.2-rc.1**, **0.2.2-rc.2** ou **0.2.2-rc.3**. A
+versão **0.3.6** adiciona o DSH 0.2.2-rc.2/rc.3, mantém conversas longas dentro do
+limite de requisição do Antigravity, permite que a compactação do DSH use este
+provedor e mantém a rota `server-default` válida após a descoberta de modelos. O
+plugin usa os serviços fornecidos pelo próprio DSH. Não é necessário aceitar
+exceções de versão ou alterar configurações.
 
 O nível de raciocínio é escolhido pelo ID exato do modelo, como o sufixo `-low`.
 O seletor separado de esforço do DSH é aceito por compatibilidade e não altera
@@ -69,8 +72,15 @@ negada continua negada. Eventos nativos ACP não são transformados em novas aç
 evitando execução duplicada. Pedidos de permissão para ferramentas fora da ponte
 são recusados e a geração é encerrada; o modo YOLO não é ativado.
 
-O DSH mantém o histórico oficial. Novos turnos partem desse contexto completo;
-somente uma troca de ferramenta ainda pendente mantém estado ACP. Conversas
+O DSH mantém o histórico oficial. Novos turnos partem desse contexto. O servidor
+do Google corta silenciosamente, pelo final, uma requisição ACP acima de ~192 KB
+(em um bloco, vários blocos ou recursos embutidos). Por isso o plugin cita primeiro
+o pedido atual do usuário e mantém cada prompt abaixo de `maxPromptBytes`
+(180.000 bytes): os schemas de ferramentas não são repetidos (a ponte MCP já os
+fornece), as rodadas mais antigas são omitidas inteiras e só então os maiores textos
+restantes são encurtados pelo meio. Cada modelo declara `contextWindow` (110.000
+tokens) para que a compactação do DSH resuma o histórico antigo antes de atingir
+esse limite. Somente uma troca de ferramenta ainda pendente mantém estado ACP. Conversas
 simultâneas usam processos separados, incluindo chamadas feitas por subagentes.
 Cancelamento funciona também enquanto a ferramenta está em execução ou aprovação.
 
@@ -95,9 +105,13 @@ as permissões e a restrição de ferramentas são controles de protocolo, não 
 sandbox do sistema operacional. Uma ação nativa pode ocorrer antes de ser
 anunciada; o plugin não promete confinamento absoluto do executável do Google.
 
-Texto e reasoning são suportados. Imagens/áudio binários, controles temperature,
-maxTokens, stop e reasoningEffort explícito não estão implementados. Escolha um
-modelo anunciado para seu tier de reasoning. Tokens de faturamento não são
+Texto e reasoning são suportados. Imagens/áudio binários não estão implementados.
+O ACP não expõe temperature, maxTokens nem stop; quando pedidos internos do DSH
+(compactação, títulos) os enviam, eles são ignorados (`ignoreUnsupportedOptions:
+false` volta a recusá-los). Escolha um modelo anunciado para seu tier de reasoning.
+`server-default` segue `defaultModel` ou o modelo atual do servidor; antes do
+primeiro login aparece como **Sign in to Antigravity** e a primeira mensagem abre o
+login oficial. Outras falhas de descoberta aparecem no seletor de modelos do DSH. Tokens de faturamento não são
 inventados a partir de ocupação de contexto. Reinícios retomam o histórico salvo
 no DSH, sem persistir uma sessão ACP própria.
 

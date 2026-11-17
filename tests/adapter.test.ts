@@ -169,7 +169,7 @@ describe('official ACP provider contract (fake server)', () => {
     });
   });
   it('refuses unsupported sampling options, images, strict tools and protocol versions', async () => {
-    const a = adapter();
+    const a = adapter('normal', { ignoreUnsupportedOptions: false });
     await expect(collect(a, { ...options(), maxTokens: 10 })).rejects.toMatchObject({
       code: 'UNSUPPORTED_OPTION',
     });
@@ -219,11 +219,67 @@ describe('official ACP provider contract (fake server)', () => {
     ).rejects.toMatchObject({ code: 'ACP_INVALID_MODEL' });
   });
   it('checks images and unsupported sampling before starting a process', async () => {
-    const a = adapter();
+    const a = adapter('normal', { ignoreUnsupportedOptions: false });
     await expect(collect(a, { ...options(), temperature: 0.5 })).rejects.toMatchObject({
       code: 'UNSUPPORTED_OPTION',
     });
     expect(a.diagnostics().processStarts).toBe(0);
+  });
+  it('ignores sampling hints from host-internal requests such as compaction by default', async () => {
+    const chunks = await collect(adapter(), {
+      ...options(),
+      maxTokens: 65536,
+      temperature: 0.2,
+      stop: ['END'],
+      ...({ purpose: 'compaction' } as object),
+    });
+    expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } });
+  });
+  it('declares a context window that keeps DSH compaction inside the prompt budget', async () => {
+    const a = adapter('normal', { contextWindows: { 'fake-model': 200000 } });
+    expect(await a.resolveModel('antigravity-acp', 'other-model')).toMatchObject({
+      context: { contextWindow: 110000 },
+    });
+    expect(await a.resolveModel('antigravity-acp', 'fake-model')).toMatchObject({
+      context: { contextWindow: 200000 },
+    });
+    expect(await a.resolveModel('antigravity-acp', 'server-default')).toMatchObject({
+      name: 'Server default',
+      context: { contextWindow: 110000 },
+    });
+  });
+  it('keeps server-default selectable after discovery so persisted selections stay valid', async () => {
+    const a = adapter();
+    const models = await a.listModels('antigravity-acp');
+    expect(models.map((m) => m.id)).toEqual(['fake-model', 'other-model', 'server-default']);
+    expect(models.find((m) => m.id === 'server-default')?.name).toBe('Server default');
+    const chunks = await collect(a, { ...options(), model: 'server-default' });
+    expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } });
+    expect((await a.listModels('antigravity-acp')).map((m) => m.id)).toContain('server-default');
+  });
+  it('offers a sign-in route while login is required, without opening a browser', async () => {
+    const a = adapter('auth');
+    const models = await a.listModels('antigravity-acp');
+    expect(models.map((m) => [m.id, m.name])).toEqual([
+      ['server-default', 'Sign in to Antigravity'],
+    ]);
+    expect(a.diagnostics().authentications).toBe(0);
+    await collect(a, { ...options(), model: 'server-default' });
+    expect(a.diagnostics().authentications).toBe(1);
+    expect((await a.listModels('antigravity-acp')).map((m) => m.id)).toEqual([
+      'fake-model',
+      'other-model',
+      'server-default',
+    ]);
+  });
+  it('surfaces discovery failures to the model picker instead of a placeholder', async () => {
+    const a = adapter('init-hang', { requestTimeoutMs: 200 });
+    await expect(a.listModels('antigravity-acp')).rejects.toMatchObject({ code: 'ACP_TIMEOUT' });
+    const pinned = adapter('init-hang', { requestTimeoutMs: 200, models: ['pinned-model'] });
+    expect((await pinned.listModels('antigravity-acp')).map((m) => m.id)).toEqual([
+      'pinned-model',
+      'server-default',
+    ]);
   });
   it('never includes remote JSON-RPC error message text in public errors', async () => {
     const a = adapter('error');
