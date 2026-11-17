@@ -18,6 +18,10 @@ export interface Config {
     cancelGraceMs: number;
     disposeGraceMs: number;
     maxSessionsPerProcess: number;
+    maxPromptBytes: number;
+    ignoreUnsupportedOptions: boolean;
+    contextWindow: number;
+    contextWindows: Record<string, number>;
 }
 export declare const Config: z<Config>;
 export declare function resolveConfig(input?: Partial<Config>): Config;

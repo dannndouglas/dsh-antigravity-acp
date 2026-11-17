@@ -5,7 +5,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListToolsRequestSchema, } from '@modelcontextprotocol/sdk/types.js';
 import { Ajv } from 'ajv';
 import { Ajv2020 } from 'ajv/dist/2020.js';
-import { LlmError, ToolCallId } from '@deepseek-ai/dsh-llm';
+import { ToolCallId } from '@deepseek-ai/dsh-llm';
+import { acpError } from '../acp/errors.js';
 const MAX_BODY = 1024 * 1024;
 export function mcpToolName(name) {
     const hash = createHash('sha256').update(name).digest('hex').slice(0, 12);
@@ -20,13 +21,13 @@ export class DshMcpBridge {
     constructor(tools, onCall) {
         this.onCall = onCall;
         if (tools.length > 256)
-            throw new LlmError('The MCP bridge supports at most 256 active tools.', 'ACP_TOOL_CATALOG_INVALID');
+            throw acpError('The MCP bridge supports at most 256 active tools.', 'ACP_TOOL_CATALOG_INVALID');
         const names = new Set();
         const ajv = new Ajv({ strict: false, validateFormats: false, logger: false });
         const ajv2020 = new Ajv2020({ strict: false, validateFormats: false, logger: false });
         this.tools = tools.map((tool) => {
             if (!tool.name || names.has(tool.name) || JSON.stringify(tool).length > 131072)
-                throw new LlmError('DSH tool names must be unique and schemas bounded to 128 KiB.', 'ACP_TOOL_CATALOG_INVALID');
+                throw acpError('DSH tool names must be unique and schemas bounded to 128 KiB.', 'ACP_TOOL_CATALOG_INVALID');
             names.add(tool.name);
             const schema = structuredClone(tool);
             // DSH uses object tool arguments. Preserve the schema instead of silently dropping constraints.
@@ -41,7 +42,7 @@ export class DshMcpBridge {
                 validate = validator.compile(schema.parameters);
             }
             catch {
-                throw new LlmError(`Cannot validate the JSON schema for DSH tool ${tool.name}.`, 'ACP_TOOL_CATALOG_INVALID');
+                throw acpError(`Cannot validate the JSON schema for DSH tool ${tool.name}.`, 'ACP_TOOL_CATALOG_INVALID');
             }
             const mcpName = mcpToolName(tool.name);
             return { mcpName, schema, validate };
@@ -56,7 +57,7 @@ export class DshMcpBridge {
     }
     async start() {
         if (this.http)
-            throw new LlmError('MCP bridge already started.', 'ACP_BRIDGE_STATE');
+            throw acpError('MCP bridge already started.', 'ACP_BRIDGE_STATE');
         this.http = createServer((request, response) => {
             void this.handle(request, response).catch(() => {
                 if (!response.headersSent)
@@ -73,7 +74,7 @@ export class DshMcpBridge {
         });
         const address = this.http.address();
         if (!address || typeof address === 'string')
-            throw new LlmError('Cannot bind MCP bridge.', 'ACP_BRIDGE_STATE');
+            throw acpError('Cannot bind MCP bridge.', 'ACP_BRIDGE_STATE');
         return {
             type: 'http',
             name: 'dsh-bridge',
@@ -117,7 +118,7 @@ export class DshMcpBridge {
             parts.push(part);
         }
         const body = JSON.parse(Buffer.concat(parts).toString('utf8'));
-        const protocol = new Server({ name: 'dsh-bridge', version: '0.3.5' }, { capabilities: { tools: {} } });
+        const protocol = new Server({ name: 'dsh-bridge', version: '0.3.6' }, { capabilities: { tools: {} } });
         this.protocols.add(protocol);
         protocol.setRequestHandler(ListToolsRequestSchema, () => ({
             tools: this.tools.map((t) => ({

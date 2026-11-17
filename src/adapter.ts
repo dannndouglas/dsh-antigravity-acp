@@ -1,6 +1,5 @@
 import {
   LlmAdapter,
-  LlmError,
   ReasoningEffortId,
   type StreamChunk,
   type LlmModelInfo,
@@ -9,7 +8,7 @@ import {
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess';
 import { AcpClient } from './acp/client.js';
 import { EventMapper, finishReason } from './acp/events.js';
-import { aborted, classify } from './acp/errors.js';
+import { aborted, acpError, classify } from './acp/errors.js';
 import { modelCatalog } from './models.js';
 import { buildPrompt } from './prompt.js';
 import type { Config } from './config.js';
@@ -37,6 +36,9 @@ const REASONING_META = {
   ],
 };
 
+/** Stable route that follows `defaultModel` or the server's current model; persisted selections stay valid. */
+export const SERVER_DEFAULT = 'server-default';
+
 export class AntigravityAcpAdapter extends LlmAdapter {
   private controlClient: AcpClient;
   private tools: ToolSessions;
@@ -63,7 +65,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
   }
 
   private async acquire(signal?: AbortSignal): Promise<() => void> {
-    if (this.disposed) throw new LlmError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
+    if (this.disposed) throw acpError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
     if (signal?.aborted) throw aborted();
     const previous = this.tail;
     let release!: () => void;
@@ -78,8 +80,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
         if (signal?.aborted) onAbort();
       });
       await Promise.race([previous, abort]);
-      if (this.disposed)
-        throw new LlmError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
+      if (this.disposed) throw acpError('Antigravity adapter has been disposed.', 'ACP_DISPOSED');
       return release;
     } catch (error) {
       void previous.then(release);
@@ -91,6 +92,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
   async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
     const release = await this.acquire(this.lifetime.signal);
     try {
+      let failure: ReturnType<typeof classify> | undefined;
       if (!this.catalog.length) {
         try {
           this.catalog = modelCatalog(await this.client.newSession(this.lifetime.signal, false));
@@ -105,25 +107,39 @@ export class AntigravityAcpAdapter extends LlmAdapter {
           }
         } catch (error) {
           await this.client.reset();
-          this.warn(classify(error).message);
+          failure = classify(error);
+          this.warn(failure.message);
         }
       }
       const entries = new Map(
         [...this.catalog, ...this.config.models.map((id) => ({ id, name: id }))].map((m) => [
           m.id,
-          m,
+          { ...m, description: 'Official ACP backend with DSH tools through MCP' },
         ]),
       );
-      if (!entries.size)
-        entries.set('server-default', {
-          id: 'server-default',
-          name: 'Server default (login / discovery pending)',
-        });
+      // Discovery itself never opens a browser. An unexpected failure is raised so
+      // the DSH model picker shows it; a missing login keeps the stable
+      // server-default route, whose first message opens the official login.
+      if (!entries.size && failure && failure.code !== 'ACP_AUTH_REQUIRED') throw failure;
+      entries.set(SERVER_DEFAULT, {
+        id: SERVER_DEFAULT,
+        ...(this.catalog.length
+          ? {
+              name: 'Server default',
+              description: this.config.defaultModel
+                ? `Uses the configured default model ${this.config.defaultModel}`
+                : "Uses the official server's current default model",
+            }
+          : {
+              name: 'Sign in to Antigravity',
+              description:
+                'Send a message to open the official Google login; the model list appears afterwards',
+            }),
+      });
       return [...entries.values()].map((m) => ({
         ...m,
         provider,
         inputModalities: ['text'],
-        description: 'Official ACP backend with DSH tools through MCP',
         reasoning: REASONING_META,
       }));
     } finally {
@@ -136,11 +152,20 @@ export class AntigravityAcpAdapter extends LlmAdapter {
     signal?: AbortSignal,
   ): Promise<LlmResolvedModelInfo> {
     if (signal?.aborted) throw aborted();
+    const target = model === SERVER_DEFAULT ? this.config.defaultModel : model;
     return {
       provider,
       id: model,
-      name: this.catalog.find((m) => m.id === model)?.name ?? model,
+      name:
+        model === SERVER_DEFAULT
+          ? 'Server default'
+          : (this.catalog.find((m) => m.id === model)?.name ?? model),
       inputModalities: ['text'],
+      // The usable window is bounded by the per-request prompt budget, not the
+      // model, so DSH compaction must run before history outgrows that budget.
+      context: {
+        contextWindow: this.config.contextWindows[target] ?? this.config.contextWindow,
+      },
       reasoning: REASONING_META,
     };
   }
@@ -190,7 +215,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
       await client.selectModel(session, options.model, options.signal);
       this.generations++;
       const nativeTools = () => {
-        error = new LlmError(
+        error = acpError(
           'Antigravity attempted native agent tool activity. This provider supports text only; tools remain unavailable on this route.',
           'ACP_NATIVE_TOOLS_UNSUPPORTED',
         );
@@ -238,7 +263,7 @@ export class AntigravityAcpAdapter extends LlmAdapter {
       await pending;
       if (options.signal?.aborted) throw aborted();
       if (!mapper.hasText && stop === 'end_turn')
-        throw new LlmError(
+        throw acpError(
           'Official ACP server ended the turn without assistant text.',
           'EMPTY_RESPONSE',
         );

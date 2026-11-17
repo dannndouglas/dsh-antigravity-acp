@@ -1,66 +1,229 @@
-import { LlmError } from '@deepseek-ai/dsh-llm';
+import { acpError } from './acp/errors.js';
 import type { AcpGenerateOptions as GenerateOptions } from './request.js';
 import type { Config } from './config.js';
-import { mcpToolName } from './mcp/bridge.js';
-export function buildPrompt(options: GenerateOptions, config: Config): string {
-  // Host reasoning metadata accepts the request field; ACP's exact model ID
-  // selects the thinking tier, so reasoningEffort is intentionally not forwarded.
-  for (const key of ['temperature', 'maxTokens'] as const) {
-    if (options[key] !== undefined)
-      throw new LlmError(
-        `ACP does not expose ${key}. Remove that request option; select an exact model ID for its reasoning tier.`,
-        'UNSUPPORTED_OPTION',
-      );
+
+type Message = GenerateOptions['messages'][number];
+type Block = Message['content'][number];
+/** Text-only projection of one DSH message, as serialized into the ACP prompt. */
+interface PromptMessage {
+  role: string;
+  toolCallId?: string;
+  isError?: boolean;
+  content: Record<string, unknown>[];
+}
+
+/**
+ * Antigravity silently cuts one ACP user request after ~192,000 UTF-8 bytes,
+ * from the tail, whether the prompt is one text block, several blocks or
+ * embedded resources. Prompts are therefore budgeted below that cap.
+ */
+export const DEFAULT_MAX_PROMPT_BYTES = 180_000;
+const MIN_CLIP_BYTES = 1024;
+const CURRENT_PLACEHOLDER = '[Current user request: quoted verbatim at the top of this prompt.]';
+
+export const utf8Bytes = (text: string): number => Buffer.byteLength(text, 'utf8');
+
+function sourceKind(message: Message): string | undefined {
+  const source = (message as { source?: { kind?: unknown } }).source;
+  return typeof source?.kind === 'string' ? source.kind : undefined;
+}
+
+/**
+ * Whether a person (or a host-internal request such as compaction) authored this
+ * user message. Runtime notices are user-role messages carrying their producer's
+ * source kind; they are context, not the task to answer.
+ */
+function isHuman(message: Message): boolean {
+  if (message.role !== 'user') return false;
+  const kind = sourceKind(message);
+  return kind === undefined || kind === 'user';
+}
+
+function textOf(message: Message): string {
+  return message.content
+    .flatMap((b) => (b.type === 'text' && b.text.trim() ? [b.text] : []))
+    .join('\n\n');
+}
+
+/** Index of the latest person-authored user message with text, if any. */
+export function latestHumanIndex(messages: readonly Message[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]!;
+    if (isHuman(message) && textOf(message)) return i;
   }
-  if (options.stop?.length)
-    throw new LlmError('ACP does not expose stop sequences.', 'UNSUPPORTED_OPTION');
+  return -1;
+}
+
+/** Keep the head and tail of oversized text, marking the omitted middle. */
+export function clipText(text: string, maxBytes: number): string {
+  const size = utf8Bytes(text);
+  if (size <= maxBytes) return text;
+  const marker = `\n\n[... ${size - maxBytes} bytes omitted by the DSH Antigravity adapter to fit the ACP request size limit ...]\n\n`;
+  const room = Math.max(0, maxBytes - utf8Bytes(marker));
+  const bytes = Buffer.from(text, 'utf8');
+  const decode = (part: Buffer) => part.toString('utf8').replace(/^�+|�+$/g, '');
+  const head = Math.floor(room * 0.7);
+  return (
+    decode(bytes.subarray(0, head)) + marker + decode(bytes.subarray(bytes.length - (room - head)))
+  );
+}
+
+function project(message: Message, current: boolean): PromptMessage {
+  return {
+    role: message.role,
+    ...('toolCallId' in message
+      ? { toolCallId: String(message.toolCallId), isError: message.isError ?? false }
+      : {}),
+    content: message.content.flatMap((b: Block, index) => {
+      if (b.type === 'image' || b.type === 'file')
+        throw acpError(
+          'This version accepts text context only. Attachments must be projected by DSH before calling the adapter.',
+          'UNSUPPORTED_OPTION',
+        );
+      // The current request is quoted once, before the transcript.
+      if (current) return index ? [] : [{ type: 'text', text: CURRENT_PLACEHOLDER }];
+      // Preserve historical text, reasoning, tool calls/results and developer updates.
+      return [{ ...(b as unknown as Record<string, unknown>) }];
+    }),
+  };
+}
+
+export interface PromptPlan {
+  prompt: string;
+  bytes: number;
+  /** Oldest history messages left out to fit the byte budget. */
+  omittedMessages: number;
+  /** Text fields shortened to fit the byte budget. */
+  clippedBlocks: number;
+}
+
+function validate(options: GenerateOptions, config: Config): void {
+  // ACP exposes no sampling controls. Host-internal requests (compaction and
+  // titles) carry these as hints, so they are dropped by default rather than
+  // failing the whole request. reasoningEffort is accepted for host metadata;
+  // the exact model ID selects the thinking tier.
+  if (!config.ignoreUnsupportedOptions) {
+    for (const key of ['temperature', 'maxTokens'] as const) {
+      if (options[key] !== undefined)
+        throw acpError(
+          `ACP does not expose ${key}. Remove that request option or enable ignoreUnsupportedOptions.`,
+          'UNSUPPORTED_OPTION',
+        );
+    }
+    if (options.stop?.length)
+      throw acpError('ACP does not expose stop sequences.', 'UNSUPPORTED_OPTION');
+  }
   if (
     config.toolPolicy === 'reject' &&
     (options.tools?.length || options.toolHistory?.tools.length)
   )
-    throw new LlmError(
+    throw acpError(
       'toolPolicy: reject refuses tool schemas. Use the default bridge policy to execute DSH tools.',
       'UNSUPPORTED_OPTION',
     );
-  const messages = options.messages.map((m) => ({
-    role: m.role,
-    ...('toolCallId' in m ? { toolCallId: m.toolCallId, isError: m.isError ?? false } : {}),
-    content: m.content.map((b) => {
-      if (b.type === 'image' || b.type === 'file')
-        throw new LlmError(
-          'This version accepts text context only. Attachments must be projected by DSH before calling the adapter.',
-          'UNSUPPORTED_OPTION',
-        );
-      return b; // Preserve historical text, reasoning, tool calls/results and developer updates.
-    }),
-  }));
-  return [
-    'DeepSeek Harness owns this conversation. Produce only the next assistant response using the supplied conversation.',
-    ...(config.toolPolicy === 'bridge' && options.tools?.length
-      ? [
-          'Use only tools supplied by the dsh-bridge MCP server. These are the real DeepSeek Harness tools, including file and terminal tools. Call them using their MCP names and schemas.',
-          'Never use built-in Antigravity tools, slash commands, skills, file access, terminals, or network tools outside dsh-bridge. Do not use a native tool to find MCP tools; the MCP catalog is already supplied.',
-          'Each MCP call is executed by DSH with its current permissions. A denied or failed tool result is authoritative; do not bypass it or repeat the action through another tool.',
-        ]
-      : [
-          'This is a text-only backend. Do not invoke native tools, slash commands, skills, file access, terminals, network tools, or MCP.',
-          'DSH tools are unavailable on this request. If an action needs tools, explain that limitation in your answer.',
-        ]),
-    'The JSON below is the complete DSH-controlled history, with roles and historical tool results. Answer its final user message. Do not repeat the transcript.',
-    JSON.stringify({
-      system: options.system ?? null,
-      messages,
-      ...(config.toolPolicy === 'bridge' && options.tools?.length
-        ? {
-            dshMcpTools: options.tools.map((tool) => ({
-              mcpServer: 'dsh-bridge',
-              mcpName: mcpToolName(tool.name),
-              dshName: tool.name,
-              description: tool.description,
-              parameters: tool.parameters,
-            })),
-          }
-        : {}),
-    }),
-  ].join('\n\n');
+}
+
+/**
+ * Serialize DSH-owned history into one ACP prompt within `config.maxPromptBytes`.
+ *
+ * The current request is quoted first, so even an unexpected server-side tail
+ * cut cannot remove it. When the budget is exceeded, whole oldest rounds are
+ * omitted first (DSH compaction should normally prevent this), then the largest
+ * remaining text fields are shortened head-and-tail.
+ */
+export function planPrompt(options: GenerateOptions, config: Config): PromptPlan {
+  validate(options, config);
+  const limit = config.maxPromptBytes;
+  const bridged = config.toolPolicy === 'bridge' && !!options.tools?.length;
+  const currentIndex = latestHumanIndex(options.messages);
+  let task = currentIndex >= 0 ? textOf(options.messages[currentIndex]!) : undefined;
+  let system = options.system ?? null;
+  let messages = options.messages.map((m, i) => project(m, i === currentIndex));
+  let omittedMessages = 0;
+  let clippedBlocks = 0;
+
+  const assemble = (): string =>
+    [
+      'DeepSeek Harness owns this conversation. Produce only the next assistant response using the supplied conversation.',
+      ...(bridged
+        ? [
+            'Use only tools supplied by the dsh-bridge MCP server. These are the real DeepSeek Harness tools, including file and terminal tools. Call them using their MCP names and schemas.',
+            'Never use built-in Antigravity tools, slash commands, skills, file access, terminals, or network tools outside dsh-bridge. Do not use a native tool to find MCP tools; the MCP catalog is already supplied.',
+            'Each MCP call is executed by DSH with its current permissions. A denied or failed tool result is authoritative; do not bypass it or repeat the action through another tool.',
+          ]
+        : [
+            'This is a text-only backend. Do not invoke native tools, slash commands, skills, file access, terminals, network tools, or MCP.',
+            'DSH tools are unavailable on this request. If an action needs tools, explain that limitation in your answer.',
+          ]),
+      ...(task === undefined
+        ? []
+        : ['CURRENT USER REQUEST (verbatim). This is the request you must answer now:', task]),
+      [
+        'The JSON below is the DSH-controlled history, with roles and historical tool results.',
+        task === undefined
+          ? 'Answer its final user message.'
+          : 'The current user request appears in it as a placeholder at its original position; answer that request, not an earlier one or a later runtime notice.',
+        omittedMessages
+          ? `The ${omittedMessages} oldest history messages were omitted to fit the request size limit.`
+          : '',
+        'Do not repeat the transcript.',
+      ]
+        .filter(Boolean)
+        .join(' '),
+      JSON.stringify({ system, messages }),
+    ].join('\n\n');
+
+  let prompt = assemble();
+  // 1. Omit whole oldest rounds (a round starts at a person-authored message).
+  //    The round holding the current request and system-role messages stay.
+  if (utf8Bytes(prompt) > limit && currentIndex > 0) {
+    const starts = options.messages.flatMap((m, i) => (i > 0 && isHuman(m) ? [i] : []));
+    const keepFrom = currentIndex;
+    let cut = 0;
+    for (const start of starts.filter((s) => s <= keepFrom)) {
+      if (utf8Bytes(prompt) <= limit) break;
+      cut = start;
+      const kept = options.messages
+        .map((m, i) => ({ m, p: project(m, i === currentIndex), i }))
+        .filter(({ m, i }) => i >= cut || m.role === 'system');
+      omittedMessages = options.messages.length - kept.length;
+      messages = kept.map(({ p }) => p);
+      prompt = assemble();
+    }
+  }
+  // 2. Shorten the largest remaining text fields until the prompt fits.
+  type Field = { get: () => string; set: (value: string) => void };
+  const fields: Field[] = [];
+  for (const message of messages)
+    for (const block of message.content)
+      for (const key of ['text', 'arguments', 'content'] as const)
+        if (typeof block[key] === 'string')
+          fields.push({ get: () => block[key] as string, set: (v) => (block[key] = v) });
+  // The current request and system prompt are shortened last.
+  const lastResort: Field[] = [];
+  if (task !== undefined) lastResort.push({ get: () => task!, set: (v) => (task = v) });
+  if (system !== null) lastResort.push({ get: () => system!, set: (v) => (system = v) });
+  for (const pool of [fields, lastResort]) {
+    let excess = utf8Bytes(prompt) - limit;
+    while (excess > 0) {
+      let largest: Field | undefined;
+      let size = 0;
+      for (const field of pool) {
+        const bytes = utf8Bytes(field.get());
+        if (bytes > size) [largest, size] = [field, bytes];
+      }
+      if (!largest || size <= MIN_CLIP_BYTES) break;
+      // JSON escaping can make a field cost more than its UTF-8 length.
+      const target = Math.max(MIN_CLIP_BYTES, size - excess - 256);
+      largest.set(clipText(largest.get(), target));
+      clippedBlocks++;
+      prompt = assemble();
+      excess = utf8Bytes(prompt) - limit;
+    }
+  }
+  return { prompt, bytes: utf8Bytes(prompt), omittedMessages, clippedBlocks };
+}
+
+export function buildPrompt(options: GenerateOptions, config: Config): string {
+  return planPrompt(options, config).prompt;
 }

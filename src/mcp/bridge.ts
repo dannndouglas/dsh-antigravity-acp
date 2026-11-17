@@ -9,7 +9,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { Ajv, type ValidateFunction } from 'ajv';
 import { Ajv2020 } from 'ajv/dist/2020.js';
-import { LlmError, ToolCallId, type ToolSchema, type ToolCallBlock } from '@deepseek-ai/dsh-llm';
+import { ToolCallId, type ToolSchema, type ToolCallBlock } from '@deepseek-ai/dsh-llm';
+import { acpError } from '../acp/errors.js';
 import type { McpServerHttp } from '@agentclientprotocol/sdk';
 
 const MAX_BODY = 1024 * 1024;
@@ -27,7 +28,7 @@ export class DshMcpBridge {
     private onCall: (call: ToolCallBlock) => Promise<CallToolResult>,
   ) {
     if (tools.length > 256)
-      throw new LlmError(
+      throw acpError(
         'The MCP bridge supports at most 256 active tools.',
         'ACP_TOOL_CATALOG_INVALID',
       );
@@ -36,7 +37,7 @@ export class DshMcpBridge {
     const ajv2020 = new Ajv2020({ strict: false, validateFormats: false, logger: false });
     this.tools = tools.map((tool) => {
       if (!tool.name || names.has(tool.name) || JSON.stringify(tool).length > 131072)
-        throw new LlmError(
+        throw acpError(
           'DSH tool names must be unique and schemas bounded to 128 KiB.',
           'ACP_TOOL_CATALOG_INVALID',
         );
@@ -52,7 +53,7 @@ export class DshMcpBridge {
         if (schema.parameters.$async) throw new Error('Async schema');
         validate = validator.compile(schema.parameters);
       } catch {
-        throw new LlmError(
+        throw acpError(
           `Cannot validate the JSON schema for DSH tool ${tool.name}.`,
           'ACP_TOOL_CATALOG_INVALID',
         );
@@ -68,7 +69,7 @@ export class DshMcpBridge {
     return server === 'dsh-bridge' && this.tools.some((t) => t.mcpName === tool);
   }
   async start(): Promise<McpServerHttp & { type: 'http' }> {
-    if (this.http) throw new LlmError('MCP bridge already started.', 'ACP_BRIDGE_STATE');
+    if (this.http) throw acpError('MCP bridge already started.', 'ACP_BRIDGE_STATE');
     this.http = createServer((request, response) => {
       void this.handle(request, response).catch(() => {
         if (!response.headersSent) response.writeHead(400);
@@ -84,7 +85,7 @@ export class DshMcpBridge {
     });
     const address = this.http.address();
     if (!address || typeof address === 'string')
-      throw new LlmError('Cannot bind MCP bridge.', 'ACP_BRIDGE_STATE');
+      throw acpError('Cannot bind MCP bridge.', 'ACP_BRIDGE_STATE');
     return {
       type: 'http',
       name: 'dsh-bridge',
@@ -129,7 +130,7 @@ export class DshMcpBridge {
     }
     const body: unknown = JSON.parse(Buffer.concat(parts).toString('utf8'));
     const protocol = new Server(
-      { name: 'dsh-bridge', version: '0.3.5' },
+      { name: 'dsh-bridge', version: '0.3.6' },
       { capabilities: { tools: {} } },
     );
     this.protocols.add(protocol);
