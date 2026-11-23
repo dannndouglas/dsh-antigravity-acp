@@ -14,11 +14,13 @@ describe('DSH installation compatibility', () => {
     '0.2.2-rc.1',
     '0.2.2-rc.2',
     '0.2.2-rc.3',
+    '0.2.2-rc.4',
+    '0.2.2-rc.5',
   ])('passes the official installer preflight on DSH %s without an exemption', (runtimeVersion) => {
     expect(evaluatePluginCompatibility(manifest, {}, runtimeVersion)).toBeUndefined();
   });
 
-  it.each(['0.1.7-rc.2', '0.2.1-rc.6', '0.2.2-rc.4', '0.3.0'])(
+  it.each(['0.1.7-rc.2', '0.2.1-rc.6', '0.2.2-rc.6', '0.3.0'])(
     'refuses unverified DSH %s instead of disabling version checks',
     (runtimeVersion) => {
       const issue = evaluatePluginCompatibility(manifest, {}, runtimeVersion);

@@ -8,8 +8,9 @@ de modelos do Antigravity.
 ## Instalação
 
 Use Node.js >=22.19 e DSH **0.2.0-rc.2**, **0.2.1-alpha.1**, **0.2.1-rc.2**,
-**0.2.1-rc.3**, **0.2.1-rc.5**, **0.2.2-rc.1**, **0.2.2-rc.2** ou **0.2.2-rc.3**. A
-versão **0.3.6** adiciona o DSH 0.2.2-rc.2/rc.3, mantém conversas longas dentro do
+**0.2.1-rc.3**, **0.2.1-rc.5**, **0.2.2-rc.1**, **0.2.2-rc.2**, **0.2.2-rc.3**,
+**0.2.2-rc.4** ou **0.2.2-rc.5**. A versão **0.3.7** adiciona o DSH 0.2.2-rc.4/rc.5
+e é compilada com as bibliotecas do DSH 0.2.2-rc.5. A versão **0.3.6** mantém conversas longas dentro do
 limite de requisição do Antigravity, permite que a compactação do DSH use este
 provedor e mantém a rota `server-default` válida após a descoberta de modelos. O
 plugin usa os serviços fornecidos pelo próprio DSH. Não é necessário aceitar
