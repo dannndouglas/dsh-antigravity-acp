@@ -1,13 +1,24 @@
 # dsh-antigravity-acp
 
-Use your Google Antigravity account as the **primary model in DeepSeek Harness**,
-with **DSH-owned tools**, through Google's official ACP server. No API key.
+Independent DeepSeek Harness (DSH) plugin that uses Google's official
+Antigravity ACP server as a model provider with **DSH-owned tools**.
 
-**Install in DSH and chat.** The plugin downloads the official server, discovers
-models, selects Antigravity for fresh chats and connects DSH's tools automatically.
-No binary installation, environment variable, configuration file, MCP setup or
-terminal login is required. If needed, the official server opens Google's browser
-login on your first message; approve it and the conversation continues.
+> [!WARNING]
+> **Google may suspend or ban your account.** If you use your Google AI
+> subscription (including Pro or Ultra) to access Antigravity through an
+> unauthorized third-party tool, Google may suspend or terminate your Antigravity
+> or Gemini CLI access. For material or repeated violations, Google's general
+> terms also allow it to delete your Google Account.
+>
+> Google's public documentation does not specifically confirm that this DSH
+> integration is authorized for subscription use. Check the terms before
+> installing or signing in. [Antigravity Terms of Service](https://antigravity.google/terms) ·
+> [Google Terms of Service](https://policies.google.com/terms?hl=en)
+
+The plugin downloads the official server, discovers models, selects Antigravity
+for fresh chats and connects DSH's tools automatically. No manual binary
+installation, configuration file or MCP setup is required. If sign-in is needed,
+the server opens Google's browser login on your first message.
 
 Version **0.3** adds a private MCP bridge. Antigravity requests a tool; DSH applies
 its normal permissions, runs the tool and returns the real result. Files,

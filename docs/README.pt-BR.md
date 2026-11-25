@@ -1,9 +1,21 @@
 # Antigravity como modelo principal do DSH
 
-Instale o plugin e converse. A versão **0.3** usa o servidor ACP oficial do Google
-como provider principal e conecta automaticamente as **ferramentas do DSH** por
-uma ponte MCP privada. Sem API key, configuração manual de MCP ou APIs privadas
-de modelos do Antigravity.
+Plugin independente para o DeepSeek Harness (DSH). Usa o servidor ACP oficial
+do Google Antigravity como provedor de modelos e conecta automaticamente as
+**ferramentas do DSH** por uma ponte MCP privada.
+
+> [!WARNING]
+> **O Google pode suspender ou banir sua conta.** Se você usar sua assinatura
+> Google AI (incluindo Pro ou Ultra) para acessar o Antigravity por uma ferramenta
+> de terceiros não autorizada, o Google pode suspender ou encerrar seu acesso ao
+> Antigravity ou ao Gemini CLI. Em caso de violação relevante ou recorrente, os
+> termos gerais do Google também preveem a exclusão da sua Conta do Google.
+>
+> A documentação pública do Google não confirma especificamente que esta
+> integração com o DSH esteja autorizada para uso com a assinatura. Consulte os
+> termos antes de instalar ou entrar na sua conta.
+> [Termos do Antigravity](https://antigravity.google/terms) ·
+> [Termos de Serviço do Google](https://policies.google.com/terms?hl=pt-BR)
 
 ## Instalação
 
